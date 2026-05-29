@@ -1,0 +1,239 @@
+---
+format: html
+filters:
+  - diagram
+diagram:
+  cache: true
+  cache-dir: ./tikz-cache
+  engine:
+    tikz:
+      execpath: lualatex
+      header-includes:
+        - '\usepackage{amsmath}'
+        - '\usepackage{unicode-math}'
+        - '\setmainfont{Libertinus Serif}'
+        - '\setmathfont{Libertinus Math}'
+---
+
+```{.tikz}
+%%| filename: candy-multilevel-structure
+%%| width: 100%
+
+\usetikzlibrary{positioning}
+\usetikzlibrary{shapes.geometric}
+\begin{tikzpicture}[{every node/.append style}=draw]
+  \node [rectangle] (respondent1) at (0, 2.5) {Subject 1};
+  \node [ellipse] (y11) at (-1.5, 1) {$y_{\text{A}_1}$};
+  \node [draw=none] (y21) at (0, 1) {$\dots$};
+  \node [ellipse] (y31) at (1.5, 1) {$y_{\text{H}_1}$};
+  \draw [-latex] (respondent1) to (y11);
+  \draw [-latex] (respondent1) to (y21);
+  \draw [-latex] (respondent1) to (y31);
+
+  \node [rectangle] (respondent2) at (4.5, 2.5) {Subject 2};
+  \node [ellipse] (y12) at (3, 1) {$y_{\text{A}_2}$};
+  \node [draw=none] (y22) at (4.5, 1) {$\dots$};
+  \node [ellipse] (y32) at (6, 1) {$y_{\text{H}_2}$};
+  \draw [-latex] (respondent2) to (y12);
+  \draw [-latex] (respondent2) to (y22);
+  \draw [-latex] (respondent2) to (y32);
+
+  \node [ellipse, draw=white] (dots_top) at (7.25, 2.5) {$\dots$};
+  \node [ellipse, draw=white] (dots_bottom) at (7.25, 1) {$\dots$};
+    \draw [-latex] (dots_top) to (dots_bottom);
+
+  \node [rectangle] (respondentn) at (10, 2.5) {Subject 10};
+  \node [ellipse] (y1n) at (8.5, 1) {$y_{\text{A}_{10}}$};
+  \node [draw=none] (y2n) at (10, 1) {$\dots$};
+  \node [ellipse] (y3n) at (11.5, 1) {$y_{\text{H}_{10}}$};
+  \draw [-latex] (respondentn) to (y1n);
+  \draw [-latex] (respondentn) to (y2n);
+  \draw [-latex] (respondentn) to (y3n);
+
+  \node [rectangle] (population) at (5, 4) {Population of experiment subjects};
+  \draw [-latex] (population) to (respondent1);
+  \draw [-latex] (population) to (respondent2);
+  \draw [-latex] (population) to (dots_top);
+  \draw [-latex] (population) to (respondentn);
+\end{tikzpicture}
+```
+
+\ 
+
+```{.tikz}
+%%| filename: candidate-multilevel-structure
+%%| width: 100%
+
+\usetikzlibrary{positioning}
+\usetikzlibrary{shapes.geometric}
+\begin{tikzpicture}[{every node/.append style}=draw]
+  \node [rectangle] (respondent1) at (0, 2.5) {Respondent 1};
+
+  \node [rectangle] (q11) at (-1.75, 1) {Task $1_1$};
+  \node [rectangle] (q21) at (0, 1) {Task $2_1$};
+  \node [rectangle] (q31) at (1.75, 1) {Task $3_1$};
+
+  \node [circle] (y111) at (-3.25, -0.5) {$y_{1_{1_1}}$};
+  \node [circle] (y211) at (-2.1, -0.5) {$y_{2_{1_1}}$};
+
+  \node [circle] (y121) at (-0.575, -0.5) {$y_{1_{2_1}}$};
+  \node [circle] (y221) at (0.575, -0.5) {$y_{2_{2_1}}$};
+
+  \node [circle] (y131) at (2.1, -0.5) {$y_{1_{3_1}}$};
+  \node [circle] (y231) at (3.25, -0.5) {$y_{2_{3_1}}$};
+
+  \draw [-latex] (respondent1) to (q11);
+  \draw [-latex] (respondent1) to (q21);
+  \draw [-latex] (respondent1) to (q31);
+  \draw [-latex] (q11) to (y111);
+  \draw [-latex] (q11) to (y211);
+  \draw [-latex] (q21) to (y121);
+  \draw [-latex] (q21) to (y221);
+  \draw [-latex] (q31) to (y131);
+  \draw [-latex] (q31) to (y231);
+  % \draw [-latex] (q31) to (y331);
+
+  \node [draw=none] (respondent2) at (5, 2.5) {$\dots$};
+  \node [rectangle] (y12) at (4, 1) {Task 1};
+  \node [draw=none] (y22) at (5, 1) {$\dots$};
+  \node [rectangle] (y32) at (6, 1) {Task 3};
+  \draw [-latex] (respondent2) to (y12);
+  \draw [-latex] (respondent2) to (y22);
+  \draw [-latex] (respondent2) to (y32);
+
+  \node [rectangle] (respondentn) at (10, 2.5) {Respondent 2105};
+  \node [rectangle] (q1n) at (8, 1) {Task $1_{2105}$};
+  \node [rectangle] (q2n) at (10, 1) {Task $2_{2105}$};
+  \node [rectangle] (q3n) at (12, 1) {Task $3_{2105}$};
+
+  \node [circle] (y113) at (6.3, -0.5) {$y_{1_{1_{2105}}}$};
+  \node [circle] (y213) at (7.6, -0.5) {$y_{2_{1_{2105}}}$};
+
+  \node [circle] (y123) at (9.35, -0.5) {$y_{1_{2_{2105}}}$};
+  \node [circle] (y223) at (10.65, -0.5) {$y_{2_{2_{2105}}}$};
+
+  \node [circle] (y133) at (12.4, -0.5) {$y_{1_{3_{2105}}}$};
+  \node [circle] (y233) at (13.7, -0.5) {$y_{2_{3_{2105}}}$};
+
+  \draw [-latex] (respondentn) to (q1n);
+  \draw [-latex] (respondentn) to (q2n);
+  \draw [-latex] (respondentn) to (q3n);
+  \draw [-latex] (q1n) to (y113);
+  \draw [-latex] (q1n) to (y213);
+  \draw [-latex] (q2n) to (y123);
+  \draw [-latex] (q2n) to (y223);
+  \draw [-latex] (q3n) to (y133);
+  \draw [-latex] (q3n) to (y233);
+
+  \node [rectangle] (population) at (5, 4) {Population of experiment respondents};
+  \draw [-latex] (population) to (respondent1);
+  \draw [-latex] (population) to (respondent2);
+  \draw [-latex] (population) to (respondentn);
+\end{tikzpicture}
+```
+
+\ 
+
+```{.tikz}
+%%| filename: candidate-multilevel-structure-annotated
+%%| width: 100%
+
+\usetikzlibrary{positioning}
+\usetikzlibrary{shapes.geometric}
+\usetikzlibrary{backgrounds}
+\definecolor{indiv}{HTML}{5F4690}
+\definecolor{indiv1}{HTML}{CBBAF7}
+\definecolor{choice}{HTML}{E17C05}
+\definecolor{choice1}{HTML}{F7C694}
+\begin{tikzpicture}[{every node/.append style}=draw]
+  \node [rectangle, draw=none, fill=indiv1] (respondent1) at (0, 2.5) {Respondent 1};
+
+  \node [rectangle] (q11) at (-1.75, 1) {Task $1_1$};
+  \node [rectangle] (q21) at (0, 1) {Task $2_1$};
+  \node [rectangle] (q31) at (1.75, 1) {Task $3_1$};
+
+  \node [circle, fill=choice1, draw=none] (y111) at (-3.25, -0.5) {$y_{1_{1_1}}$};
+  \node [circle, fill=choice1, draw=none] (y211) at (-2.1, -0.5) {$y_{2_{1_1}}$};
+
+  \node [circle, fill=choice1, draw=none] (y121) at (-0.575, -0.5) {$y_{1_{2_1}}$};
+  \node [circle, fill=choice1, draw=none] (y221) at (0.575, -0.5) {$y_{2_{2_1}}$};
+
+  \node [circle, fill=choice1, draw=none] (y131) at (2.1, -0.5) {$y_{1_{3_1}}$};
+  \node [circle, fill=choice1, draw=none] (y231) at (3.25, -0.5) {$y_{2_{3_1}}$};
+
+  \draw [-latex] (respondent1) to (q11);
+  \draw [-latex] (respondent1) to (q21);
+  \draw [-latex] (respondent1) to (q31);
+  \draw [-latex] (q11) to (y111);
+  \draw [-latex] (q11) to (y211);
+  \draw [-latex] (q21) to (y121);
+  \draw [-latex] (q21) to (y221);
+  \draw [-latex] (q31) to (y131);
+  \draw [-latex] (q31) to (y231);
+  % \draw [-latex] (q31) to (y331);
+
+  \node [draw=none] (respondent2) at (5, 2.5) {$\dots$};
+  \node [rectangle] (y12) at (4, 1) {Task 1};
+  \node [draw=none] (y22) at (5, 1) {$\dots$};
+  \node [rectangle] (y32) at (6, 1) {Task 3};
+  \draw [-latex] (respondent2) to (y12);
+  \draw [-latex] (respondent2) to (y22);
+  \draw [-latex] (respondent2) to (y32);
+
+  \node [rectangle, draw=none, fill=indiv1] (respondentn) at (10, 2.5) {Respondent 2105};
+  \node [rectangle] (q1n) at (8, 1) {Task $1_{2105}$};
+  \node [rectangle] (q2n) at (10, 1) {Task $2_{2105}$};
+  \node [rectangle] (q3n) at (12, 1) {Task $3_{2105}$};
+
+  \node [circle, fill=choice1, draw=none] (y113) at (6.3, -0.5) {$y_{1_{1_{2105}}}$};
+  \node [circle, fill=choice1, draw=none] (y213) at (7.6, -0.5) {$y_{2_{1_{2105}}}$};
+
+  \node [circle, fill=choice1, draw=none] (y123) at (9.35, -0.5) {$y_{1_{2_{2105}}}$};
+  \node [circle, fill=choice1, draw=none] (y223) at (10.65, -0.5) {$y_{2_{2_{2105}}}$};
+
+  \node [circle, fill=choice1, draw=none] (y133) at (12.4, -0.5) {$y_{1_{3_{2105}}}$};
+  \node [circle, fill=choice1, draw=none] (y233) at (13.7, -0.5) {$y_{2_{3_{2105}}}$};
+
+  \draw [-latex] (respondentn) to (q1n);
+  \draw [-latex] (respondentn) to (q2n);
+  \draw [-latex] (respondentn) to (q3n);
+  \draw [-latex] (q1n) to (y113);
+  \draw [-latex] (q1n) to (y213);
+  \draw [-latex] (q2n) to (y123);
+  \draw [-latex] (q2n) to (y223);
+  \draw [-latex] (q3n) to (y133);
+  \draw [-latex] (q3n) to (y233);
+
+  \node [rectangle] (population) at (5, 4) {Population of experiment respondents};
+  \draw [-latex] (population) to (respondent1);
+  \draw [-latex] (population) to (respondent2);
+  \draw [-latex] (population) to (respondentn);
+
+  \node [rounded corners, draw=none, align=center, fill=indiv, text=white] 
+    (note_respondent) at (-0.5, 3.75) 
+    {\textsf{Things measured here:}\\\texttt{resp\_gender}, \texttt{resp\_party}};
+
+  \node [rounded corners, draw=none, align=center, fill=choice, text=white] 
+    (note_choice) at (0, -2.25) 
+    {\textsf{Things measured here:}\\\texttt{gender}, \texttt{years\_politics}, \texttt{spouse\_occupation},\\\texttt{occupation}, \texttt{n\_children}, \texttt{age}};
+
+  \begin{scope}[on background layer]
+    \draw [-, color=indiv, ultra thick] (note_respondent.center) to (respondent1);
+    \draw [-, color=indiv, thin] (note_respondent.center) to (respondentn);
+
+    \draw [-, color=choice, thick] (note_choice.center) to (y111);
+    \draw [-, color=choice, thick] (note_choice.center) to (y211);
+    \draw [-, color=choice, thick] (note_choice.center) to (y121);
+    \draw [-, color=choice, thick] (note_choice.center) to (y221);
+    \draw [-, color=choice, thick] (note_choice.center) to (y131);
+    \draw [-, color=choice, thick] (note_choice.center) to (y231);
+  
+    \draw [-, color=choice, ultra thin] (note_choice.center) to (y113.south);
+    \draw [-, color=choice, ultra thin] (note_choice.center) to (y213.south);
+    \draw [-, color=choice, ultra thin] (note_choice.center) to (y123.south);
+    \draw [-, color=choice, ultra thin] (note_choice.center) to (y223.south);
+    \draw [-, color=choice, ultra thin] (note_choice.center) to (y133.south);
+    \draw [-, color=choice, ultra thin] (note_choice.center) to (y233.south);
+  \end{scope}
+\end{tikzpicture}
+```
