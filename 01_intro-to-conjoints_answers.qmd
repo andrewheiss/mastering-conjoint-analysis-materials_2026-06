@@ -623,7 +623,7 @@ predictions(model_logit, newdata = all_profiles, type = "link") |>
 
 ### Willingness to pay
 
-Relative importance and market shares are useful, but the most immediately actionable output for marketers and economists is willingness to pay (WTP), or how much more (or less) would a customer pay for a given attribute level?
+Relative importance and market shares are useful, but the most immediately actionable output for marketers and economists is willingness to pay (WTP), or how much more (or less) would a customer pay for a given attribute level.
 
 We can only calculate this if one of the attributes in the experimental design is price. This candy example doesn't have one, so we can't show it here, but we'll cover this on Day 3!
 
