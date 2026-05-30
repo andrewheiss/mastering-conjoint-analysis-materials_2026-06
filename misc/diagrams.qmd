@@ -237,3 +237,80 @@ diagram:
   \end{scope}
 \end{tikzpicture}
 ```
+
+\ 
+
+```{.tikz}
+%%| filename: minivan-multilevel-structure
+%%| width: 100%
+
+\usetikzlibrary{positioning}
+\usetikzlibrary{shapes.geometric}
+\begin{tikzpicture}[{every node/.append style}=draw]
+  \node [rectangle] (respondent1) at (0, 2.5) {Respondent 1};
+
+  \node [rectangle] (q11) at (-1.5, 1) {Task $1_1$};
+  \node [draw=none] (q21) at (0, 1) {$\dots$};
+  \node [rectangle] (q31) at (1.5, 1) {Task $15_1$};
+
+  \node [circle] (y111) at (-3.75, -0.5) {$y_{1_{1_1}}$};
+  \node [circle] (y211) at (-2.5, -0.5) {$y_{2_{1_1}}$};
+  \node [circle] (y311) at (-1.25, -0.5) {$y_{3_{1_1}}$};
+
+  \node [draw=none] (y121) at (0, -0.5) {$\dots$};
+
+  \node [circle] (y131) at (1.25, -0.5) {$y_{1_{15_1}}$};
+  \node [circle] (y231) at (2.5, -0.5) {$y_{2_{15_1}}$};
+  \node [circle] (y331) at (3.75, -0.5) {$y_{3_{15_1}}$};
+
+  \draw [-latex] (respondent1) to (q11);
+  \draw [-latex] (respondent1) to (q21);
+  \draw [-latex] (respondent1) to (q31);
+  \draw [-latex] (q11) to (y111);
+  \draw [-latex] (q11) to (y211);
+  \draw [-latex] (q11) to (y311);
+  \draw [-latex] (q21) to (y121);
+  \draw [-latex] (q31) to (y131);
+  \draw [-latex] (q31) to (y231);
+  \draw [-latex] (q31) to (y331);
+
+  \node [draw=none] (respondent2) at (5, 2.5) {$\dots$};
+  \node [rectangle] (y12) at (4, 1) {Task 1};
+  \node [draw=none] (y22) at (5, 1) {$\dots$};
+  \node [rectangle] (y32) at (6, 1) {Task 15};
+  \draw [-latex] (respondent2) to (y12);
+  \draw [-latex] (respondent2) to (y22);
+  \draw [-latex] (respondent2) to (y32);
+
+  \node [rectangle] (respondentn) at (10, 2.5) {Respondent 200};
+  \node [rectangle] (q1n) at (8.5, 1) {Task $1_{200}$};
+  \node [draw=none] (q2n) at (10, 1) {$\dots$};
+  \node [rectangle] (q3n) at (11.5, 1) {Task $15_{200}$};
+
+  \node [circle] (y113) at (6.25, -0.5) {$y_{1_{1_{200}}}$};
+  \node [circle] (y213) at (7.5, -0.5) {$y_{2_{1_{200}}}$};
+  \node [circle] (y313) at (8.75, -0.5) {$y_{3_{1_{200}}}$};
+
+  \node [draw=none] (y123) at (10, -0.5) {$\dots$};
+
+  \node [circle] (y133) at (11.25, -0.5) {$y_{1_{15_{200}}}$};
+  \node [circle] (y233) at (12.5, -0.5) {$y_{2_{15_{200}}}$};
+  \node [circle] (y333) at (13.75, -0.5) {$y_{3_{15_{200}}}$};
+
+  \draw [-latex] (respondentn) to (q1n);
+  \draw [-latex] (respondentn) to (q2n);
+  \draw [-latex] (respondentn) to (q3n);
+  \draw [-latex] (q1n) to (y113);
+  \draw [-latex] (q1n) to (y213);
+  \draw [-latex] (q1n) to (y313);
+  \draw [-latex] (q2n) to (y123);
+  \draw [-latex] (q3n) to (y133);
+  \draw [-latex] (q3n) to (y233);
+  \draw [-latex] (q3n) to (y333);
+
+  \node [rectangle] (population) at (5, 4) {Population of experiment respondents};
+  \draw [-latex] (population) to (respondent1);
+  \draw [-latex] (population) to (respondent2);
+  \draw [-latex] (population) to (respondentn);
+\end{tikzpicture}
+```

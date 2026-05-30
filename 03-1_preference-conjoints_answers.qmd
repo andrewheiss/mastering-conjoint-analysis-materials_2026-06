@@ -1,0 +1,749 @@
+---
+title: "Preference measurement with conjoint data"
+subtitle: "Day 3 --- Exercise"
+bibliography: references.json
+toc: true
+---
+
+## Overview
+
+Today we're switching from causal questions and estimands and looking at preference measurement, which is what conjoint analysis was actually originally invented to do! 
+
+We'll be more like marketers and look at things like:
+
+- **Part-worth utilities:** How much does each attribute level contribute to overall product appeal?
+- **Relative attribute importance:** Which attributes drive overall preference the most?
+- **Willingness to pay:** How much would consumers trade in dollars for a change in a feature?
+- **Market simulations:** If we launch this product, how many consumers would choose it over competitors?
+
+Notice how I talked about "products" in all of those points ↑. That because these quantities were created for marketing and business decisions. But you don't have to think of products---you can do all this stuff with candidates, organizations, or whatever else your profiles represent. For instance, in @ChaudhryDotsonHeiss2021, we used market simulations with hypothetical NGO profiles.
+
+::: {.callout-tip title="Same model, different questions"}
+All these quantities still use the same underlying model as the causal approach---a logistic regression on choice outcomes (we'll avoid OLS-based linear probability models now). The difference is what quantities we extract and how we interpret them.
+:::
+
+### Data
+
+The data is in `data/rintro-chapter13conjoint.csv`, and it's simulated data for a hypothetical experiment about consumer preferences for minivan features. It comes from chapter 13 in @ChapmanFeit2019 and is available from the [book's resources page](http://r-marketing.r-forge.r-project.org/) (or [directly from their data folder](http://r-marketing.r-forge.r-project.org/data/)).
+
+In this experiment, respondents were shown three profiles of hypothetical minivans and asked which you'd want to buy. The profiles varied randomly along 4 different attributes:
+
+| Attribute / feature | Column  | Levels                       |
+|:--------------------|:--------|:-----------------------------|
+| Passengers          | `seat`  | 6, 7, 8                      |
+| Cargo space         | `cargo` | 2 feet, 3 feet               |
+| Engine type         | `eng`   | Gas, electric, hybrid        |
+| Price               | `price` | \$30,000; \$35,000; \$40,000 |
+
+There's also a column called `carpool` indicating if the respondent carpools with others when commuting. It's an individual respondent-level characteristic and is constant throughout all the questions and alternatives, and we'll use it later for looking at preference heterogeneity. It's not a product feature.
+
+Respondents see this a question similar to this 15 different times, with three options with randomly shuffled levels for each of the features:
+
+::: {.callout-note title="Example conjoint survey question" icon=false}
+
+If you had to choose between these three minivan options, which would you buy?
+
+| Attribute   | Option 1 | Option 2 | Option 3 |
+|-------------|:--------:|:--------:|:--------:|
+| Passengers  |    7     |    8     |    6     |
+| Cargo space |  3 feet  |  3 feet  |  2 feet  |
+| Engine type | Electric |   Gas    |  Hybrid  |
+| Price       | \$40,000 | \$40,000 | \$30,000 |
+| Choice      |    ○     |    ○     |    ○     |
+
+::::
+
+## Get a feel for the data
+
+First, we need to do a little data cleaning work, since most conditional and multinomial logit packages need a column that uniquely identified each choice set (or each respondent-task combination). We'll also make sure the levels of the different attributes follow a consistent order.
+
+```{r}
+#| label: load-libraries-data
+#| warning: false
+#| message: false
+
+library(tidyverse)
+library(mclogit)
+library(patchwork)
+library(scales)
+library(marginaleffects)
+library(parameters)
+
+options(
+  parameters_cimethod = FALSE,
+  parameters_exponentiate = FALSE,
+  width = 120
+)
+
+# Nice colors
+clrs <- MetBrewer::met.brewer("Tiepolo")
+
+# Some lookup tables to help make all the attributes and levels plot in the right order
+attributes_levels <- tribble(
+  ~attribute, ~attribute_nice, ~level,
+  "seat", "Seating", c("6", "7", "8"),
+  "cargo", "Cargo", c("2ft", "3ft"),
+  "eng", "Engine", c("gas", "elec", "hyb"),
+  "price", "Price", c("30", "35", "40")
+)
+
+attribute_lookup <- attributes_levels |> 
+  select(-level) |> 
+  mutate(attribute_nice = fct_inorder(attribute_nice))
+
+attribute_levels_lookup <- attributes_levels |>
+  unnest(level) |> 
+  mutate(level_nice = level) |> 
+  mutate(across(c("attribute_nice", "level_nice"), \(x) fct_inorder(x)))
+
+minivans <- read_csv("data/rintro-chapter13conjoint.csv") |>
+  rename(resp_id = resp.id) |>  # I don't like .s in column names
+  mutate(choice_id = cur_group_id(), .by = c(resp_id, ques)) |> 
+  mutate(
+    seat = factor(seat, levels = c("6", "7", "8")),
+    cargo = factor(cargo, levels = c("2ft", "3ft")),
+    eng = factor(eng, levels = c("gas", "elec", "hyb")),
+    price = factor(price, levels = c("30", "35", "40")),
+    price_num = as.numeric(as.character(price)),
+    carpool = (carpool == "yes")
+  )
+```
+
+::: {.callout-tip title="Your turn 1"}
+Use the code chunk below to answer these questions about the data:
+
+1. What does one row represent?
+2. How many respondents are there? How many tasks per respondent? How many alternatives (`alt`) per task?
+3. What should `mean(choice)` be in a 3-alternative design, and why? Check that.
+4. What is `ques`? What is `choice_id`? Why do we need `choice_id` rather than just `resp_id` and `ques` separately?
+5. How many distinct choice sets are there in total?
+6. How many possible minivan profiles are there?
+:::
+
+```{r}
+#| label: your-turn-1
+
+# Do stuff here
+```
+
+::: {.callout-note title="Your turn 1 answers"}
+1. **One row = one minivan alternative shown to one respondent in one task.** The fundamental unit is respondent × task × alternative.
+2. **200 respondents; 15 tasks per respondent; 3 alternatives per task.** Total rows = 200 × 15 × 3 = 9,000.
+3. **`mean(choice)` should be 1/3 ≈ 0.333.** Each task has exactly one chosen alternative among three, so exactly one-third of rows have `choice = 1`.
+4. **`ques` is the within-respondent task number (1–15).** The same value `ques = 1` appears for every respondent's first task---it does not uniquely identify a choice set. `choice_id` is a globally unique identifier (`resp_id_ques`) that tells `{mclogit}` which three rows competed against each other. The model needs to know the groups; `choice_id` provides that.
+5. **200 respondents × 15 tasks = 3,000 distinct choice sets.**
+6. **3 seat configurations × 2 cargo sizes × 3 engine types × 3 prices = 3 * 2 * 3 * 3 = 54 potential profiles**
+:::
+
+```{r}
+#| label: your-turn-1-answers
+#| collapse: true
+
+# 200 respondents, 15 tasks per respondent, 3 alternatives per task
+minivans |>
+  summarize(
+    n_respondents = n_distinct(resp_id),
+    n_tasks = n_distinct(ques),
+    n_alts = n_distinct(alt)
+  )
+
+# Mean of choice = 1/3
+minivans |>
+  summarize(avg_choice = mean(choice))
+
+# ques goes 1–15, not unique across respondents
+minivans |>
+  count(ques)
+
+# choice_id: 3,000 unique choice sets
+minivans |>
+  summarize(n_choice_sets = n_distinct(choice_id))
+
+# Possible profiles
+3 * 2 * 3 * 3
+
+# Or more programmatically
+minivans |>
+  summarize(
+    across(
+      c(seat, cargo, eng, price),
+      \(x) nlevels(x)
+    )
+  ) |> 
+  mutate(combinations = reduce(c_across(everything()), `*`))
+```
+
+Unlike the candy example from Day 1, and similar to the candidate example from Day 2, this experiment has one additional nested layer, since respondents were shown multiple tasks (`ques`). I find that it's helpful to visualize the hierarchy of each respondents' 45 rows in @fig-minivan-hierarchy.
+
+::: {#fig-minivan-hierarchy}
+
+![](img/minivan-multilevel-structure.svg){width="100%"}
+
+Multilevel experimental structure, with minivan choices $\{y_1, y_2, y_3\}$ nested in sets of questions in respondents
+
+:::
+
+
+## The model
+
+For multi-alternative conjoint data like this (respondents choosing among 3 options), the standard model is conditional logit or multinomial logit, which models the probability that a respondent chooses from some number of alternatives within a task.
+
+We could use OLS (like the LPM from Day 1 and Day 2), but the three alternatives are not independent---they compete within each choice set. Conditional/multinomial logit correctly accounts for this structure. We'll use {mclogit} for this, which requires that we use some special syntax on the left-hand side of the `~` in the formula:
+
+```{r}
+#| label: fit-clogit
+
+model_multinomial <- mclogit(
+  choice | choice_id ~ seat + cargo + eng + price,
+  data = minivans
+)
+
+model_parameters(model_multinomial)
+```
+
+::: {.callout-note title="Why not `survival::clogit()` or `mlogit::mlogit()`?"}
+They all do the same thing, but I find that {mclogit} has the simplest interface for standard long-format data. Plus it's directly supported by {marginaleffects}. `survival::clogit()` needs a `strata()` term in the formula and produces slightly different output. `{mlogit}` requires reshaping to "wide" format with its own `mlogit.data()` function. For everything we're doing today---utilities, WTP, AMCEs, market simulation---{mclogit} + {marginaleffects} is the path of least resistance.
+
+Plus it's most directly translatable to {brms} for Bayesian modeling.
+
+You should also check out [{logitr}](https://jhelvy.github.io/logitr/index.html), which works slightly differently and which doesn't work with {marginaleffects}, but has nice built-in support for all the quantities we're measuring today.
+:::
+
+## Part-worth utilities
+
+Central to all this marketing stuff is the idea of *utility*. In economics, utility represents the subjective value that a consumer derives from something (typically measured in "utils"). It is not observable, and you can't compare it across people, but you can infer it from choices. A respondent who consistently picks an electric minivan over a gas one is revealing that electric engines give them higher utility.
+
+In conjoint experiments, part-worth utilities decompose total product utility into the contributions of individual attribute levels. A minivan's total utility is the sum of its parts---the utility of its engine type, plus the utility of its seating capacity, plus the utility of its cargo space, plus the utility of its price. This additive structure is the core assumption of the conjoint model:
+
+$$
+U(\text{product}) = \beta_\text{engine} + \beta_\text{seating} + \beta_\text{cargo} + \beta_\text{price}
+$$
+
+This decomposition is what makes conjoint so powerful: instead of asking "how much do you like this minivan?" (which tells us nothing actionable), we ask respondents to make repeated choices, and from those choices we reverse-engineer how much each *component* contributes to the total utility. The part-worths are then building blocks we can recombine to predict preferences for any product configuration we can imagine---even ones might not have appeared in the study.
+
+Calculating part-worth utilities is easy---they're just the model coefficients. Each coefficient represents the change in log-odds of selection for one attribute level compared to its reference level. 
+
+```{r}
+model_parameters(model_multinomial)
+```
+
+Or, like we've been doing this whole workshop, we can use {marginaleffects} instead. We just need to set `type = "link"` so that the values stay on the log-odds scale instead of getting converted to the probability scale:
+
+```{r}
+avg_comparisons(model_multinomial, type = "link")
+```
+
+HOWEVER, there are two different ways to parameterize and report part-worths, and understanding the difference can matter a lot for the other quantities we'll calculate.
+
+### Dummy coding (the default)
+
+In R's default contrast coding (`contr.treatment`), one level of each factor is set as the reference with utility = 0, and all other levels are measured relative to it. That's how regular regressions work in R, and we can see it explicitly in `avg_comparisons()`, where the `Contrast` column shows that everything is relative to the reference level (6 seats, 2 feet of cargo space, gas engine, \$30,000 price)
+
+::: {.callout-tip title="Your turn 2"}
+Look at the dummy-coded utilities above and answer these questions without running any new code:
+
+1. Which engine type has the highest utility? Does this make sense intuitively?
+2. What does it mean that Gas has utility = 0? Does that mean consumers don't care about gas engines?
+3. Price levels have negative utilities for \$35,000 and \$40,000. What does that mean?
+4. Can you say whether engine type matters more than seating capacity based on these dummy-coded utilities alone? Why or why not?
+:::
+
+::: {.callout-note title="Your turn 2 answers"}
+1. **Electric has the highest utility** (followed by hybrid, then gas = 0). Consumers in this sample prefer electric engines, all else equal.
+2. **Gas utility = 0 is a modeling artifact and doesn't actually mean there's no utility.** Gas is the reference level by construction. It doesn't mean consumers are indifferent to gas engines---it means all other engines are measured *relative to* gas. If we had set hybrid as the reference, gas would have a negative utility and hybrid would be 0.
+3. **Negative utilities for higher prices reflect price sensitivity.** Consumers prefer cheaper minivans. Utilities fall as price rises: \$30,000 = 0 (reference), \$35,000 < 0, \$40,000 << 0.
+4. **No!** The utilities are measured relative to different arbitrary baselines. Engine's "range" starts from gas = 0; seating's range starts from 6 seats = 0. Comparing across attributes requires centering---see below.
+:::
+
+### Center coding
+
+The problem with dummy coding for *relative importance* is that the zero point is arbitrary. To make utilities comparable across attributes we center within each attribute so that the mean utility equals zero. After centering, positive utilities mean "above average for this attribute" and negative utilities mean "below average."
+
+We can do this by changing the contrast settings from `contr.treatment` to `contr.sum`. **Ultimately this won't matter because of the magic of {marginaleffects}** so we'll show it with a copy of the data instead. This is just to help with the intuition!
+
+```{r}
+minivans_cc <- minivans
+contrasts(minivans_cc$seat)  <- contr.sum(nlevels(minivans_cc$seat))
+contrasts(minivans_cc$cargo) <- contr.sum(nlevels(minivans_cc$cargo))
+contrasts(minivans_cc$eng)   <- contr.sum(nlevels(minivans_cc$eng))
+contrasts(minivans_cc$price)   <- contr.sum(nlevels(minivans_cc$price))
+
+model_cc <- mclogit(
+  choice | choice_id ~ seat + cargo + eng + price, 
+  data = minivans_cc
+)
+
+# We can also do it on the fly inside mclogit()
+# model_cc <- mclogit(
+#   choice | choice_id ~ seat + cargo + eng + price, 
+#   data = minivans_cc,
+#   contrasts = list(
+#     seat = contr.sum(nlevels(minivans_cc$seat)),
+#     cargo = contr.sum(nlevels(minivans_cc$cargo)),
+#     eng = contr.sum(nlevels(minivans_cc$eng)),
+#     price = contr.sum(nlevels(minivans_cc$price))
+#   )
+# )
+
+model_parameters(model_cc)
+```
+
+The log odds here are different, and the parameter names are different too (we've lost the nice names and now they just say 1 and 2). The scale is different because everything's been adjusted to sum to 0.
+
+But look at the `seat` coefficients: they don't add to zero, and there are only two of them. There's still an omitted case here! Only now, it's the last one (8 seats), and its value isn't actually 0---it's the negative sum of the other coefficients. For 8 seats, it's -(0.28037 + -0.25491) = -0.02546. The positive part worth of 0.28 for 6 seats means it has an above average utility for this attribute; the -0.25 for 7 seats means that it's below average; and the -0.03 for 8 seats is nearly zero, so it's essentially neutral; . 
+
+And since these are centered part-worths, we can compare *across attributes*. For instance, the negative utility from 7 seats (-0.25) is roughly the same as the negative utility from having 2 feet of cargo space (-0.24). Both are below their attribute's average.
+
+### Post-hoc centering with {marginaleffects}
+
+But working with these center-coded part-worths is annoying because we have to calculate the missing part-worth on our own (`-sum(all_coefs_in_attribute)`). Instead of messing with contrast coding or manual reference-level arithmetic, {marginaleffects} can gives us centered utilities after fitting a regular old dummy-coded model.
+
+First we'll make log-odds-scale predictions across a balanced grid of all attribute levels:
+
+```{r}
+log_preds_seat <- avg_predictions(
+  model_multinomial,
+  newdata = "balanced",
+  by = "seat",
+  type = "link"
+)
+log_preds_seat
+```
+
+We get three values---one per number of seats---which is nice. Those aren't lost! Next we need to subtract the average of these predictions from each prediction to center them:
+
+```{r}
+avg_log_preds_seat <- mean(log_preds_seat$estimate)
+
+log_preds_seat |> 
+  mutate(estimate = estimate - mean(log_preds_seat$estimate)) |> 
+  as_tibble() |> 
+  select(seat, estimate)
+```
+
+These are the same values we get from a regression that used `contr.sum()`, and they sum to 0, as expected. They involve *a lot* less data wrangling *and* we get the standard errors and confidence intervals without any extra work. 
+
+Plus, for me at least, this makes the centering more explicit since we're literally subtracting the mean. I never ever use `contr.sum()` in any models I run, so its output is weird and unfamiliar. This is more comfortable for me :)
+
+We can do this for all the attributes with some {purrr} magic:
+
+```{r}
+utilities <- attribute_lookup |>
+  mutate(
+    results = map(
+      attribute, \(att) {
+      avg_predictions(
+        model_multinomial,
+        newdata = "balanced",
+        by = att,
+        type = "link"
+      ) |>
+        rename(level = all_of(att))
+    })
+  ) |>
+  unnest(results) |>
+  left_join(
+    attribute_levels_lookup,
+    by = join_by(attribute, attribute_nice, level)
+  ) |> 
+  group_by(attribute) |>
+  mutate(
+    att_avg = mean(estimate),
+    estimate = estimate - att_avg,
+    conf.low = conf.low - att_avg,
+    conf.high = conf.high - att_avg
+  ) |>
+  select(-att_avg) |>
+  ungroup()
+
+utilities |>
+  select(attribute, level, estimate, conf.low, conf.high) |>
+  arrange(attribute, desc(estimate))
+```
+
+::: {.callout-tip title="Your turn 3"}
+1. Look at the centered utilities for Engine. Which engine type is above average? Which is most below average? What does a centered utility of approximately 0 mean for a given level?
+2. Look at the range (max - min) of centered utilities within each attribute. Which attribute has the widest range? Does this match your intuition from the utility table above?
+:::
+
+```{r}
+#| label: your-turn-3
+
+# Do stuff here
+```
+
+::: {.callout-note title="Your turn 3 answers"}
+1. **The engine level with the highest utility is the most preferred**; the one with the most negative centered utility is the least preferred. A centered utility near zero means that level is approximately at the average for its attribute---consumers are roughly indifferent between it and a "typical" engine.
+2. **Engine and Price should have the largest ranges**, confirming they drive choice the most.
+:::
+
+```{r}
+#| label: your-turn-3-answers
+
+# Ranges from centered utilities (our main utilities dataframe)
+utilities |>
+  group_by(attribute) |>
+  summarize(range_centered = diff(range(estimate)))
+```
+
+### Visualizing utilities
+
+Since these centered part-worth utilities are on the same scale, we can visualize them to help compare which levels provide the most and least utility:
+
+```{r}
+#| label: fig-utilities
+#| fig-width: 10
+#| fig-height: 7
+#| fig-cap: Part-worth utilities for minivan attributes, zero-centered within each attribute. Bars show 95% confidence intervals.
+#| code-fold: true
+
+ggplot(utilities, aes(x = estimate, y = fct_reorder(level_nice, estimate))) +
+  geom_col(aes(fill = estimate > 0), width = 0.6) +
+  geom_errorbar(aes(xmin = conf.low, xmax = conf.high), width = 0.2) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  facet_wrap(vars(attribute_nice), scales = "free_y", ncol = 2) +
+  scale_fill_manual(
+    values = c("FALSE" = clrs[1], "TRUE" = clrs[8]),
+    guide = "none"
+  ) +
+  labs(
+    x = "Part-worth utility (zero-centered within attribute)",
+    y = NULL
+  )
+```
+
+We can also view all levels together in a single ranked plot to see which specific levels are most and least preferred across the entire design:
+
+```{r}
+#| label: fig-utility-profile
+#| fig-width: 10
+#| fig-height: 6
+#| fig-cap: Utility profile chart showing all attribute levels ranked by centered utility. Colors distinguish attributes.
+#| code-fold: true
+
+utilities |>
+  mutate(label = paste0(attribute_nice, ": ", level_nice)) |>
+  ggplot(aes(
+    x = estimate,
+    y = fct_reorder(label, estimate),
+    color = attribute_nice
+  )) +
+  geom_pointrange(aes(xmin = conf.low, xmax = conf.high)) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_color_manual(values = clrs[c(2, 3, 6, 7)]) +
+  labs(
+    x = "Utility (zero-centered within attribute)",
+    y = NULL,
+    color = "Attribute"
+  )
+```
+
+## Relative attribute importance
+
+Part-worths tell us which levels are preferred within each attribute, but they don't directly answer "which attributes drive overall choice the most?" For that, we need to calculate **relative importance**, which measures how much each attribute's levels vary in consumer appeal.
+
+Relative importance is the range of part-worth utilities within an attribute (max - min), expressed as a share of the total range across all attributes. The intuition is that an attribute with a large range has levels that pull consumers strongly in different directions (e.g., Electric vs. Gas), while an attribute with a small range is one consumers are largely indifferent about (e.g., 2 ft vs. 3 ft cargo).
+
+```{r}
+#| label: relative-importance
+
+importance <- utilities |>
+  group_by(attribute_nice) |>
+  summarize(
+    max_utility = max(estimate),
+    min_utility = min(estimate),
+    # This could also just be this, but I like being illustrative here
+    # range = max(estimate) - min(estimate)
+    range = max_utility - min_utility
+  ) |>
+  mutate(importance_pct = range / sum(range)) |>
+  arrange(desc(importance_pct))
+
+importance
+```
+
+::: {.callout-tip title="Your turn 4"}
+1. Which attribute is most important? Which is least important? Does this match your intuition from the utility plots?
+2. Interpret the importance of Price. What does it mean practically for a product manager at car dealership?
+3. Plot the importance scores somehow.
+:::
+
+```{r}
+#| label: your-turn-4
+
+# Do stuff here
+```
+
+::: {.callout-note title="Your turn 4 answers"}
+1. **Engine type and price are the two most important attributes.** Cargo space is the least important. This matches the utility plots: the ranges for engine and price are the widest. Practically, this is a plausible result---consumers care a lot about whether they're buying a gas vs. electric vehicle, and price always matters.
+2. **Price has high importance, which means the market is price-sensitive.** The \$10,000 range from \$30,000 to \$40,000 creates substantial variation in selection probability. For a product manager, this signals that pricing decisions will strongly affect market penetration---a \$5,000 premium needs to be justified by feature improvements that consumers actually value.
+3. See code below.
+:::
+
+```{r}
+#| label: your-turn-4-answers
+
+importance |>
+  mutate(attribute_nice = fct_reorder(attribute_nice, importance_pct)) |>
+  ggplot(aes(x = importance_pct, y = attribute_nice)) +
+  geom_col() +
+  scale_x_continuous(labels = label_percent()) +
+  labs(
+    x = "Relative importance (%)",
+    y = NULL
+  )
+```
+
+
+## Willingness to pay
+
+The most directly actionable output in marketing conjoint is willingness to pay (WTP): the dollar amount a consumer would trade for a feature change. This is only possible when one of the conjoint attributes is price, which we have this time! (We didn't with the candy and candidate examples).
+
+We calculate this by taking the part-worth utility (or coefficient) for the level of interest and dividing it by the negative part-worth utility (or coefficient) for price. The negative sign is needed because price has negative utility (higher price → lower utility → lower probability of selection). Dividing by the negative price coefficient makes it so the WTP comes out positive for preferred attributes.
+
+$$
+\text{WTP} = - \frac{\beta_\text{feature}}{\beta_\text{price}}
+$$
+
+This gives us the dollar amount a consumer would be willing to pay (or would need to be compensated) for that feature.
+
+For this to work, price must be numeric and not categorical so that $\beta_\text{price}$ has units of utility-per-dollar. This means we need a new model that uses `price_num`:
+
+```{r}
+#| label: refit-numeric-price
+
+model_wtp <- mclogit(
+  choice | choice_id ~ seat + cargo + eng + price_num,
+  data = minivans
+)
+```
+
+We can calculate these by hand if we want:
+
+```{r}
+coefs <- coef(model_wtp)
+
+# Multiply by 1000 since these are in thousands of dollars
+-coefs["cargo3ft"] / coefs["price_num"] * 1000
+#> cargo3ft 
+#> 2750.601
+```
+
+There are a few different ways we can interpret this:
+
+- A customer would be willing to pay \$2,750 to upgrade from 2 to 3 feet of cargo space
+- Customers would be indifferent if offered a minivan with 3 feet of cargo space and a minivan with 2 feet of space that's \$2,750 cheaper
+- Moving from 2 to 3 feet of cargo space has the same impact on utility as a \$2,750 drop in price
+
+Even better, we can calculate these WTPs with {marginaleffects} to get standard errors and confidence intervals!
+
+```{r}
+#| label: wtp-ci
+
+wtp_results <- hypotheses(
+  model_wtp,
+  hypothesis = c(
+    "7 seats vs. 6" = "-seat7 / price_num = 0",
+    "8 seats vs. 6" = "-seat8 / price_num = 0",
+    "3 ft cargo vs. 2 ft" = "-cargo3ft / price_num = 0",
+    "Hybrid vs. Gas" = "-enghyb / price_num = 0",
+    "Electric vs. Gas" = "-engelec / price_num = 0"
+  )
+)
+
+wtp_results
+```
+
+::: {.callout-tip title="Your turn 5"}
+1. Interpret the WTP for Electric vs. Gas. What does it mean practically for a car manufacturer considering whether to offer an electric model?
+2. Is the WTP for Hybrid or Electric larger? Is there a meaningful gap? What does that tell us about consumer preferences for clean-energy vehicles in this sample?
+3. The WTP for "8 seats vs. 6" is smaller than WTP for "7 seats vs. 6." Does this make sense? Can you think of a reason why going from 6 to 7 seats might be worth more than going from 7 to 8 seats?
+4. Make a coefficient plot for all the WTP estimates with their CIs. Add a vertical dashed line at 0.
+:::
+
+```{r}
+#| label: your-turn-5
+
+# Do stuff here
+```
+
+::: {.callout-note title="Your turn 5 answers"}
+1. **WTP for Electric vs. Gas is about -\$8.8K**, meaning consumers in this sample need to be *compensated* roughly \$8,800 to accept an electric engine over gas---not the other way around. (lol this is weird nowadays; this data was made in the early 2010s, and I'd guess that nowadays people are more willing to pay for electric cars). For a manufacturer in that context, offering an electric variant at the same price as gas would dramatically hurt sales; a very large price discount would be required to move electric inventory.
+2. **Both Hybrid (-\$4.7K) and Electric (-\$8.8K) have negative WTP**, so neither is more preferred than Gas. Electric is substantially worse than Hybrid in this sample---nearly twice the penalty. The confidence intervals don't overlap, confirming the gap is real.
+3. **Surprising but consistent with the data: 6 seats is most preferred.** Both 7-seat (≈-\$3,100) and 8-seat (≈-\$1,800) configurations have negative WTP vs. 6 seats. The 8-seat penalty is smaller than the 7-seat penalty---consumers are slightly less averse to 8 seats than 7, which might reflect perceptions about a "proper" large-family van vs. an awkward intermediate size. This is a good reminder that WTP estimates describe the sample's actual preferences, which may not match your priors.
+4. See code below.
+:::
+
+```{r}
+#| label: your-turn-5-answers
+#| code-fold: true
+
+wtp_results |>
+  mutate(
+    hypothesis = fct_reorder(hypothesis, estimate),
+    attribute = case_when(
+      str_detect(hypothesis, "seats") ~ "Seating",
+      str_detect(hypothesis, "cargo") ~ "Cargo",
+      .default = "Engine"
+    ),
+  ) |>
+  ggplot(aes(x = estimate, y = hypothesis, color = attribute)) +
+  geom_pointrange(aes(xmin = conf.low, xmax = conf.high)) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_x_continuous(labels = label_dollar(scale = 1000)) +
+  scale_color_manual(values = clrs[c(2, 7, 8)]) +
+  labs(
+    x = "WTP",
+    y = NULL,
+    color = "Attribute"
+  )
+```
+
+
+## Market simulation
+
+The real power of working with utilities is market simulation: given estimated preferences, we can predict how customers would divide among a set of competing products. To do this, we define a hypothetical market of products with different attributes, plug those into the model to get predicted utilities, then use the [softmax function](https://en.wikipedia.org/wiki/Softmax_function) to convert the logit-scale predictions into normalized probabilities that sum to 100%.
+
+### Define a market
+
+Let's imagine four hypothetical minivans competing in the market. We'll even give them goofy names for fun:
+
+```{r}
+#| label: define-market
+
+market <- tribble(
+  ~product     , ~seat , ~cargo , ~eng   , ~price ,
+  "Eco Basic"  , "6"   , "2ft"  , "hyb"  , "30"   ,
+  "Family Max" , "8"   , "3ft"  , "gas"  , "35"   ,
+  "Green Star" , "7"   , "3ft"  , "elec" , "40"   ,
+  "Value Pack" , "6"   , "2ft"  , "gas"  , "30"
+) |>
+  mutate(
+    choice_id = 1, # mclogit() needs this
+    seat = factor(seat, levels = c("6", "7", "8")),
+    cargo = factor(cargo, levels = c("2ft", "3ft")),
+    eng = factor(eng, levels = c("gas", "elec", "hyb")),
+    price = factor(price, levels = c("30", "35", "40"))
+  )
+```
+
+### Compute utilities and market shares
+
+We can predict each product's utility on the logit scale and compute its predicted market share. This shows us the predicted fraction of customers that each product would attract if these were the only four minivans available:
+
+```{r}
+#| label: market-simulation
+
+market_shares <- predictions(
+  model_multinomial,
+  newdata = market,
+  type = "link"
+) |>
+  as_tibble() |>
+  select(product, seat, cargo, eng, price, utility = estimate) |>
+  mutate(market_share = exp(utility) / sum(exp(utility)))
+
+market_shares
+```
+
+That's neat! The fourth car there (all base levels, cheapest) dominates at 51%, the most expensive electric car only has 2% of the market, and the other two are close to each other in the mid-20%s.
+
+```{r}
+#| label: fig-market-shares
+#| fig-width: 7
+#| fig-height: 4
+#| fig-cap: Simulated market shares for four hypothetical minivans.
+market_shares |>
+  mutate(
+    product_nice = str_glue(
+      "{product}\n({seat} seats + {cargo} cargo + {eng} + ${price}k)"
+    )
+  ) |>
+  mutate(product_nice = fct_reorder(product_nice, market_share)) |>
+  ggplot(aes(x = market_share, y = product_nice, fill = product)) +
+  geom_col() +
+  scale_x_continuous(labels = percent_format()) +
+  scale_fill_manual(values = clrs[c(1, 3, 5, 7)], guide = "none") +
+  labs(x = "Market share", y = NULL)
+```
+
+::: {.callout-tip title="Your turn 6"}
+Explore these "what if" scenarios:
+
+1. **Price cut:** Green Star (the electric option) drops its price from \$40,000 to \$30,000. How do the market shares change? Which competitor is hurt most?
+2. **Engine upgrade:** Eco Basic upgrades its engine from Hybrid to Electric. How does this change Eco Basic's share? Is the gain larger or smaller than what the WTP for Electric would suggest?
+3. **New entrant:** Add a fifth product: an electric 7-seater with 3 ft cargo at \$40,000. Call it "Ultra Green". How much share does it take from each existing product, and why?
+4. **IIA sanity check:** Remove Value Pack from the market entirely. Do the shares of the remaining three products stay in the same *proportional* relationship to each other? (This is the "independence of irrelevant alternatives" property of the logit model.)
+:::
+
+```{r}
+#| label: your-turn-6
+
+# Do stuff here
+```
+
+::: {.callout-note title="Your turn 6 answers"}
+1. **Green Star jumps from ≈1.9% to 9.6%---a big proportional gain, but it still can't match Value Pack (47.1%) despite being equally cheap.** The electric penalty is so severe that even at the lowest price point, Green Star falls far short of the gas competition. Value Pack takes the biggest absolute hit (4 percentage points) since it's the only other \$30,000 option.
+2. **Eco Basic's share *falls* from ≈22.7% to 12.5% (ooof).** In this dataset, electric is strongly dispreferred vs. hybrid (WTP difference ≈ -\$4,100), so switching Eco Basic to electric is a self-inflicted wound. Value Pack absorbs most of the defectors (+7 percentage points to 57.8%), since consumers fleeing a bad electric product gravitate toward the cheapest available gas option.
+3. **Ultra Green ends up with the same specs and price as Green Star, so they split shares exactly equally: 1.82% each.** Under IIA, the new entrant steals proportionally from *every* competitor---Value Pack loses the most in absolute terms (-0.9 percentage points) simply because it has the biggest share. In reality you'd expect a clone to steal almost exclusively from its twin, not from a product with totally different attributes.
+:::
+
+```{r}
+#| label: your-turn-6-answers
+#| code-fold: true
+
+# Helper function for simulating shares
+simulate_shares <- function(market_df, model) {
+  market_df <- market_df |>
+    mutate(
+      choice_id = 1, # mclogit() needs this
+      seat = factor(seat, levels = c("6", "7", "8")),
+      cargo = factor(cargo, levels = c("2ft", "3ft")),
+      eng = factor(eng, levels = c("gas", "elec", "hyb")),
+      price = factor(price, levels = c("30", "35", "40"))
+    )
+
+  predictions(
+    model,
+    newdata = market_df,
+    type = "link"
+  ) |>
+    as_tibble() |>
+    select(product, seat, cargo, eng, price, utility = estimate) |>
+    mutate(market_share = exp(utility) / sum(exp(utility)))
+}
+
+# 1. GreenStar price cut
+market1 <- tribble(
+  ~product     , ~seat , ~cargo , ~eng   , ~price ,
+  "Eco Basic"  , "6"   , "2ft"  , "hyb"  , "30"   ,
+  "Family Max" , "8"   , "3ft"  , "gas"  , "35"   ,
+  "Green Star" , "7"   , "3ft"  , "elec" , "30"   ,
+  "Value Pack" , "6"   , "2ft"  , "gas"  , "30"
+)
+
+simulate_shares(market1, model_multinomial)
+
+# 2. EcoBasic engine upgrade: Hybrid → Electric
+market2 <- tribble(
+  ~product     , ~seat , ~cargo , ~eng   , ~price ,
+  "Eco Basic"  , "6"   , "2ft"  , "elec" , "30"   ,
+  "Family Max" , "8"   , "3ft"  , "gas"  , "35"   ,
+  "Green Star" , "7"   , "3ft"  , "elec" , "40"   ,
+  "Value Pack" , "6"   , "2ft"  , "gas"  , "30"
+)
+
+simulate_shares(market2, model_multinomial)
+
+# 3. New entrant: UltraGreen (electric 7-seater, 3ft cargo, $40K)
+market3 <- tribble(
+  ~product      , ~seat , ~cargo , ~eng   , ~price ,
+  "Eco Basic"   , "6"   , "2ft"  , "hyb"  , "30"   ,
+  "Family Max"  , "8"   , "3ft"  , "gas"  , "35"   ,
+  "Green Star"  , "7"   , "3ft"  , "elec" , "40"   ,
+  "Value Pack"  , "6"   , "2ft"  , "gas"  , "30"   ,
+  "Ultra Green" , "7"   , "3ft"  , "elec" , "40"
+)
+
+simulate_shares(market3, model_multinomial)
+```
