@@ -286,6 +286,7 @@ model_cc <- mclogit(
 # )
 
 model_parameters(model_cc)
+# seat1 = 6 seats, seat2 = 7 seats, (omitted 8 = -(1+2))
 ```
 
 The log odds here are different, and the parameter names are different too (we've lost the nice names and now they just say 1 and 2). The scale is different because everything's been adjusted to sum to 0.
@@ -673,7 +674,6 @@ Explore these "what if" scenarios:
 1. **Price cut:** Green Star (the electric option) drops its price from \$40,000 to \$30,000. How do the market shares change? Which competitor is hurt most?
 2. **Engine upgrade:** Eco Basic upgrades its engine from Hybrid to Electric. How does this change Eco Basic's share? Is the gain larger or smaller than what the WTP for Electric would suggest?
 3. **New entrant:** Add a fifth product: an electric 7-seater with 3 ft cargo at \$40,000. Call it "Ultra Green". How much share does it take from each existing product, and why?
-4. **IIA sanity check:** Remove Value Pack from the market entirely. Do the shares of the remaining three products stay in the same *proportional* relationship to each other? (This is the "independence of irrelevant alternatives" property of the logit model.)
 :::
 
 ```{r}
