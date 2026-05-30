@@ -307,13 +307,12 @@ avg_predictions(model_lm, newdata = "balanced", by = "gender", vcov = ~resp_id)
 #   ...
 # )
 
-# So we use some map2() magic from {purrr} instead
+# So we use some map() magic from {purrr} instead
 mm_all <- attribute_lookup |>
   mutate(
-    results = map2(
+    results = map(
       attribute,
-      attribute_nice,
-      \(att, att_nice) {
+      \(att) {
         avg_predictions(model_lm, by = att, vcov = ~resp_id) |>
           # avg_predictions() names the column with the "by" argument, like
           # "gender", "age", etc., so we need to rename it to something
