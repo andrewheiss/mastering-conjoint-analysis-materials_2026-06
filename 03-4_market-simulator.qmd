@@ -1,0 +1,46 @@
+---
+title: "Minivan market simulator"
+subtitle: "Day 3"
+format:
+  html:
+    page-layout: full
+
+engine: knitr
+
+filters:
+  - shinylive
+---
+
+::: {.callout-note title="Setup"}
+This simulator requires the [shinylive Quarto extension](https://quarto-ext.github.io/shinylive/). Install it in your project:
+
+```sh
+quarto add quarto-ext/shinylive
+```
+
+The app source lives in `market-simulator-app/` and can be run as a standalone Shiny app with `shiny::runApp("market-simulator-app/")`. 
+
+Shinylive doesn't have access to your local or server filesystem for security reasons, so you have to [do some tricky shenanigans to get files loaded](https://quarto-ext.github.io/shinylive/load_file.html), like embedding files as text (either as a CSV or as a binary file), or fetching them via HTTP.
+
+Here, I opted for binary embedding since the `.rds` model object from {mclogit} doesn't really work as plain text. {mclogit} includes a ton of extra information in its model objects, and the resulting `.rds` file is like ≈350 KB, and there's no nice way to stick *that* in here as plain text, so I stripped it down and removed a bunch of data from the different slots in the object. What remains is something that's only 1.6 KB (!), but it still works with {marginaleffects}!
+
+The code for shrinking the model and saving it as `.rds` is in `market-simulator-app/_shrink_model.R`. It outputs plain text base64 binary output that you can paste down in the `## file: model.rds` block below.
+:::
+
+```{shinylive-r}
+#| standalone: true
+#| viewerHeight: 950
+
+## file: global.R
+{{< include market-simulator-app/global.R >}}
+
+## file: ui.R
+{{< include market-simulator-app/ui.R >}}
+
+## file: server.R
+{{< include market-simulator-app/server.R >}}
+
+## file: model.rds
+## type: binary
+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
+```

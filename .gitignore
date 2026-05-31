@@ -6,6 +6,8 @@
 /_site/
 /.quarto/
 *_files
+*.html
 misc/tikz-cache
+market-simulator-app/*.rds
 
 **/*.quarto_ipynb

@@ -1,0 +1,162 @@
+---
+title: Shiny in the browser!
+format: 
+  html:
+    page-layout: full
+
+engine: knitr
+
+filters:
+  - shinylive
+---
+
+This is Shiny without a server! Magic! This works because of [{shinylive}](https://posit-dev.github.io/r-shinylive/index.html) and the [shinylive Quarto extension](https://quarto-ext.github.io/shinylive/).
+
+```{shinylive-r}
+#| standalone: true
+#| viewerHeight: 700
+
+library(shiny)
+library(ggplot2)
+
+# Load and clean data
+penguins <- na.omit(penguins)
+
+ui <- fluidPage(
+  titlePanel("🐧 Penguins! 🐧"),
+  sidebarLayout(
+    sidebarPanel(
+      width = 3,
+      selectInput(
+        "variable",
+        "Select numeric variable to visualize:",
+        choices = c(
+          "Bill length (mm)" = "bill_len",
+          "Bill depth (mm)" = "bill_dep",
+          "Flipper length (mm)" = "flipper_len"
+        ),
+        selected = "bill_len"
+      ),
+      
+      sliderInput(
+        "binwidth",
+        "Histogram binwidth:",
+        min = 1,
+        max = 20,
+        value = 2,
+        step = 0.5
+      ),
+      
+      hr(),
+      h4("Filter data"),
+      
+      selectInput(
+        "species",
+        "Species:",
+        choices = c("All", levels(penguins$species)),
+        selected = "All"
+      ),
+      
+      selectInput(
+        "island",
+        "Island:",
+        choices = c("All", levels(penguins$island)),
+        selected = "All"
+      ),
+      
+      selectInput(
+        "sex",
+        "Sex:",
+        choices = c("All", "male", "female"),
+        selected = "All"
+      ),
+      
+      hr(),
+      helpText("Data from R's built-in penguins data | Palmer Station LTER")
+    ),
+    
+    mainPanel(
+      width = 9,
+      # plotOutput("histogram", height = "500px"),
+      plotOutput("histogram"),
+      h4("Summary statistics"),
+      verbatimTextOutput("summary")
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  
+  # Reactive data filtered by user selections
+  filtered_data <- reactive({
+    data <- penguins
+    
+    # Apply filters
+    if (input$species != "All") {
+      data <- data[data$species == input$species, ]
+    }
+    if (input$island != "All") {
+      data <- data[data$island == input$island, ]
+    }
+    if (input$sex != "All") {
+      data <- data[data$sex == input$sex, ]
+    }
+    
+    data
+  })
+  
+  # Render histogram
+  output$histogram <- renderPlot({
+    req(nrow(filtered_data()) > 0)
+    
+    variable_name <- switch(input$variable,
+      "bill_len" = "Bill Length (mm)",
+      "bill_dep" = "Bill Depth (mm)",
+      "flipper_len" = "Flipper Length (mm)"
+    )
+    
+    ggplot(filtered_data(), aes(x = .data[[input$variable]])) +
+      geom_histogram(
+        binwidth = input$binwidth,
+        color = "white",
+        boundary = 0
+      ) +
+      theme_minimal(base_size = 14) +
+      labs(
+        title = paste("Distribution of", variable_name),
+        subtitle = if (input$species != "All" | input$island != "All" | input$sex != "All") 
+          paste("Filtered by:", 
+                if(input$species != "All") paste("Species:", input$species),
+                if(input$island != "All") paste("Island:", input$island),
+                if(input$sex != "All") paste("Sex:", input$sex)) else "All penguins",
+        x = variable_name,
+        y = "Count"
+      ) +
+      theme(
+        plot.title = element_text(face = "bold"),
+        plot.subtitle = element_text(color = "gray50")
+      )
+  })
+  
+  # Render summary statistics
+  output$summary <- renderPrint({
+    data <- filtered_data()
+    req(nrow(data) > 0)
+    
+    cat("Dataset size:", nrow(data), "penguins\n")
+    cat("Selected variable:", 
+        switch(input$variable,
+               "bill_len" = "Bill Length",
+               "bill_dep" = "Bill Depth",
+               "flipper_len" = "Flipper Length"), 
+        "\n")
+    cat("----------------------------------------------------------\n")
+    summary_stats <- summary(data[[input$variable]])
+    print(summary_stats)
+    cat("\n")
+    cat("Standard deviation:", round(sd(data[[input$variable]], na.rm = TRUE), 2))
+  })
+}
+
+shinyApp(ui, server)
+```
