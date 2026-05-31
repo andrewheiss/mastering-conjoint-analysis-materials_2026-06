@@ -11,3 +11,5 @@ misc/tikz-cache
 market-simulator-app/*.rds
 
 **/*.quarto_ipynb
+
+/.luarc.json

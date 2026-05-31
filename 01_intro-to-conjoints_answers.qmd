@@ -159,7 +159,7 @@ Don't run any code or try to do any calculations---just eyeball the results and 
 
 ## Influence of attributes in isolation
 
-That third question of which attributes make profiles more or less popular is the main purpose of conjoint analysis. We don't actually care which of these 8 profiles is the best. If you were the product manager responsible for making candy, knowing that 50% of respondents chose dark + chewy + no nuts doesn't necessarily mean that you should only make that exact kind of candy—with actual conjoint studies, it's possible to have hundreds of possible profiles, many of which aren't even feasible, so we're not really focused on final product selection here. What we care about instead is how these attributes influence consumer preferences.
+That third question of which attributes make profiles more or less popular is the main purpose of conjoint analysis. We don't actually care which of these 8 profiles is the best. If you were the product manager responsible for making candy, knowing that 50% of respondents chose dark + chewy + no nuts doesn't necessarily mean that you should only make that exact kind of candy---with actual conjoint studies, it's possible to have hundreds of possible profiles, many of which aren't even feasible, so we're not really focused on final product selection here. What we care about instead is how these attributes influence consumer preferences.
 
 Let's compute the average selection rate for each attribute level, ignoring all other attributes (or holding all other attributes constant). This is known as the *marginal mean*. Here's some code for dark vs. milk:
 
@@ -432,7 +432,7 @@ While social science generally considers attributes to be causal levers, marketi
 We'll look at this in a lot more detail on Day 3. For now, here's a quick preview.
 
 ::: {.callout-caution title="Same model; different estimands"}
-While I divided up these general approaches into causal inference and preference description, they're still both done by the same model. For marginal means and AMCES, we generally work with percentage points; for utility and importance and market share and willingness-to-pay, we generally work with log odds. They can both be estimated with logistic regression. We only used LPM earlier because it's quick and easy (and because so many social scientists love using it), but you can also get AMCEs out of far more complex models—I did this in @ChaudhryDotsonHeiss2025.
+While I divided up these general approaches into causal inference and preference description, they're still both done by the same model. For marginal means and AMCES, we generally work with percentage points; for utility and importance and market share and willingness-to-pay, we generally work with log odds. They can both be estimated with logistic regression. We only used LPM earlier because it's quick and easy (and because so many social scientists love using it), but you can also get AMCEs out of far more complex models---I did this in @ChaudhryDotsonHeiss2025.
 :::
 
 ### Part-worth utilities
@@ -644,7 +644,7 @@ This gives us the dollar amount a consumer would be willing to pay (or would nee
 The causal language is justified by **random assignment of attribute levels**. Because dark vs. milk chocolate is randomly and independently assigned across profiles and respondents---uncorrelated with texture, nuts, or anything else---comparing dark to milk is structurally equivalent to a randomized experiment. No confounding is possible by design.
 :::
 
-2. The name "conjoint" comes from evaluating attributes *together* (jointly). How would results differ if we asked respondents to rate each attribute separately on a 1–10 scale, rather than choosing among complete profiles?
+2. The name "conjoint" comes from evaluating attributes *together* (jointly). How would results differ if we asked respondents to rate each attribute separately on a 1--10 scale, rather than choosing among complete profiles?
 
 ::: {.callout-note title="Answer"}
 Separate ratings would give us stated importance, but would not account for trade-offs.
@@ -657,7 +657,7 @@ There are two common approaches, usually combined:
 
 **Fractional factorial design:** Instead of showing all 4,096 profiles, show a carefully chosen subset---like 32? 64? idk, choose something reasonable---that preserves orthogonality for the effects you care about. The subset is constructed so that each attribute level still appears equally often with every level of every other attribute. You lose the ability to estimate high-order interactions, but those are rarely the focus.
 
-**Repeated choice tasks:** Rather than showing all profiles simultaneously, show respondents many small tasks (e.g., "choose between these two/three/four", repeated 10–20 times with different random profiles each time). This lets you spread the design space across many tasks, and across many respondents who each see different subsets. The full experimental design is covered in aggregate even though no single person sees it all.
+**Repeated choice tasks:** Rather than showing all profiles simultaneously, show respondents many small tasks (e.g., "choose between these two/three/four", repeated 10--20 times with different random profiles each time). This lets you spread the design space across many tasks, and across many respondents who each see different subsets. The full experimental design is covered in aggregate even though no single person sees it all.
 
 Real conjoint studies almost always use the second approach (repeated binary or ternary choice tasks) combined with a fractionally designed profile set. We'll build this kind of design on Day 4.
 :::
