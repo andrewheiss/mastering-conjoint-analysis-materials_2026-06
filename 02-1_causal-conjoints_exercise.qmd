@@ -119,56 +119,6 @@ Use your intuition and the code chunk below to answer these questions:
 # Do stuff here
 ```
 
-::: {.callout-note title="Your turn 1 answers"}
-1. **One row = one candidate profile shown to one respondent in one task.** This is the fundamental unit of long conjoint data: respondent × task × alternative.
-2. **2,105 respondents; 3 tasks each × 2 profiles per task = 6 possible rows per respondent, or 2,105 × 6 = 12,630 possible rows.** In reality, there are only 12,450 rows, since a handful of respondents only completed 1 or 2 profiles. 
-3. **`choice = 1` means that profile was chosen; `choice = 0` means it was rejected.** Each task has exactly one choice, so exactly half the rows must have `choice = 1`, so `mean(choice)` should be 0.5.
-4. **`task` is the within-respondent task number (1, 2, or 3).** The same value "1" appears for every respondent's first task, so it does *not* uniquely identify a choice set across the dataset. `task_id` is a globally unique identifier for each choice event for each respondent (which two profiles competed against each other for this respondent). This is important for conditional logit, which needs to know which rows were in the same forced comparison.
-5. **2 genders × 4 possible years in politics × 3 spouse occupations × 4 occupations × 3 possible numbers of children × 3 ages = 2 * 4 * 3 * 4 * 3 * 3 = 864 potential profiles**
-:::
-
-```{r}
-#| label: your-turn-1-answers
-#| collapse: true
-
-# How many respondents?
-candidates |>
-  summarize(n_resp = n_distinct(resp_id))
-
-# Rows per respondent. Some didn't do all the tasks!
-candidates |>
-  count(resp_id) |>
-  count(n, name = "n_respondents")
-
-# Mean of choice
-candidates |>
-  summarize(avg_choice = mean(choice))
-
-# task is 1-3, not unique across respondents
-candidates |> count(task)
-
-# task_id is unique per choice set
-candidates |>
-  summarize(n_task_ids = n_distinct(task_id))
-#> # A tibble: 1 × 1
-#>   n_task_ids
-#>        <int>
-#> 1       6225
-
-# Possible profiles
-2 * 4 * 3 * 4 * 3 * 3
-
-# Or more programmatically
-candidates |>
-  summarize(
-    across(
-      c(gender, years_politics, spouse_occupation, occupation, n_children, age),
-      \(x) nlevels(x)
-    )
-  ) |> 
-  mutate(combinations = reduce(c_across(everything()), `*`))
-```
-
 ---
 
 Unlike the candy example from Day 1, this experiment has one additional nested layer, since respondents were shown multiple tasks (`task`). I find that it's helpful to visualize the hierarchy of each respondents' six rows in @fig-candidate-hierarchy. Also unlike the candy example, this is not a full factorial design---it would be impossible to show respondents 864 profiles simultaneously! Instead, this uses a *fractional factorial design*. Respondents see random pairs of the 864 profiles, and through the magic of randomization, we can still estimate causal effects for the different attribute levels since they appear uniformly across respondent tasks.
@@ -283,58 +233,6 @@ avg_predictions(model_lm, newdata = "balanced", by = "gender", vcov = ~resp_id)
 # Do stuff here
 ```
 
-::: {.callout-note title="Your turn 2 answers"}
-1. **Years in politics, candidate occupation, and spouse occupation show the largest spread; number of children, gender, and age show the smallest.** Candidates with 8 years of experience are noticeably preferred over first-timers; mayors and state legislators are preferred over teachers (and voters *really* don't like lawyers!). Voters are fairly indifferent to the number of children and they treat 29-year-olds and 65-year-olds with the same (more negative) favorability, preferring 45-year-old candidates.
-2. See plot code below.
-3. **Similar marginal means mean respondents are roughly indifferent between those levels**---the attribute barely moves the needle on candidate appeal. A large spread means the attribute strongly shapes who gets selected.
-:::
-
-```{r}
-#| label: your-turn-2-answers
-#| code-fold: true
-
-# We need to calculate predictions for each attribute in isolation, then combine
-# them. We could do it like this, but this requires a bunch of data wrangling
-# work and it's gross.
-# bind_rows(
-#   avg_predictions(model_lm, by = "gender", vcov = ~resp_id) |>
-#     mutate(attribute = "Gender"),
-#   avg_predictions(model_lm, by = "years_politics", vcov = ~resp_id) |>
-#     mutate(attribute = "Years in politics"),
-#   ...
-# )
-
-# So we use some map() magic from {purrr} instead
-mm_all <- attribute_lookup |>
-  mutate(
-    results = map(
-      attribute,
-      \(att) {
-        avg_predictions(model_lm, by = att, vcov = ~resp_id) |>
-          # avg_predictions() names the column with the "by" argument, like
-          # "gender", "age", etc., so we need to rename it to something
-          # consistent for when the rows all get combined
-          rename(level = all_of(att))
-      }
-    )
-  ) |>
-  unnest(results) |>
-  left_join(
-    attribute_levels_lookup,
-    by = join_by(attribute, attribute_nice, level)
-  )
-
-ggplot(mm_all, aes(x = estimate, y = level_nice)) +
-  geom_pointrange(aes(xmin = conf.low, xmax = conf.high)) +
-  geom_vline(xintercept = 0.5, linetype = "dashed", color = "grey50") +
-  scale_x_continuous(labels = label_percent()) +
-  labs(
-    x = "Marginal mean",
-    y = NULL
-  ) +
-  facet_wrap(vars(attribute_nice), scales = "free_y", ncol = 2)
-```
-
 ## Average marginal component effects (AMCEs)
 
 This distinction between causal and descriptive estimands makes sense if we look at the notation for the estimands themselves. [In the world of do-calculus](https://www.andrewheiss.com/blog/2021/09/07/do-calculus-backdoors/), causal questions are asked using the $\operatorname{do}()$ operator, which represents [a direct intervention into a data generating process](https://stats.stackexchange.com/questions/211008/dox-operator-meaning). In this case, the researcher randomly sets the attributes to specific levels---the respondent does not self-select into different conditions or decide for themselves that Candidate 1 is a 45-year-old teacher with 3 kids or that Candidate 2 is a 29-year-old mayor with no kids. This thus eliminates selection bias and other external confounding, leaving us with an average causal effect. 
@@ -379,51 +277,6 @@ Switching a candidate from male to female causes a 4.25 percentage point increas
 #| label: your-turn-3
 
 # Do stuff here
-```
-
-::: {.callout-note title="Your turn 3 answers"}
-1. **Years in politics has the largest AMCEs.** Eight years of experience vs. no experience produces a huge positive effect (15 percentage points!). This matches the largest spread in the marginal means.
-2. **Age**: Middle-aged candidates (45) are strongly preferred---about 8 percentage points more likely to be selected than 29-year-olds. Sixty-five-year-olds are statistically indistinguishable from 29-year-olds (−1 pp, p = 0.187), so voters penalize both youth and old age, preferring candidates in their prime. **Occupation**: People *hate* lawyers---they're about 7 pp *less likely* to be selected than teachers. Mayors and state legislators each gain about 5 pp over teachers. Voters reward relevant government experience. **Spouse occupation**: Having any spouse boosts favorability over being unmarried---farmers by 8 pp, doctors by 6 pp. **Number of children**: Having 1 or 3 children each add about 5 pp over no children, and the effects are nearly identical---voters reward having children but are indifferent to how many.
-:::
-
-```{r}
-#| label: your-turn-3-answers
-#| code-fold: true
-
-all_amces <- avg_comparisons(
-  model_lm,
-  variables = c(
-    "gender",
-    "years_politics",
-    "spouse_occupation",
-    "occupation",
-    "n_children",
-    "age"
-  ),
-  vcov = ~resp_id
-)
-
-reference_rows <- all_amces |>
-  separate_wider_delim(contrast, delim = " - ", names = c("level", "ref")) |>
-  select(term, level = ref) |>
-  distinct() |>
-  mutate(estimate = 0, conf.low = 0, conf.high = 0)
-
-plot_data <- all_amces |>
-  separate_wider_delim(contrast, delim = " - ", names = c("level", "ref")) |>
-  bind_rows(reference_rows) |> 
-  left_join(attribute_levels_lookup, by = join_by(term == attribute, level))
-
-ggplot(plot_data, aes(x = estimate, y = level_nice)) +
-  geom_vline(xintercept = 0) +
-  geom_pointrange(
-    aes(xmin = conf.low, xmax = conf.high),
-    position = position_dodge(width = 0.15)
-  ) +
-  scale_x_continuous(labels = label_pp) +
-  labs(x = "AMCE", y = NULL) +
-  facet_wrap(vars(attribute_nice), scales = "free_y", ncol = 2) +
-  theme(legend.position = "bottom")
 ```
 
 ## Oh no! 1: Subgroup analysis and conditional effects
@@ -542,52 +395,6 @@ The analysis above looked at respondent party identification. Try the same appro
 #| label: your-turn-4
 
 # Do stuff here
-```
-
-::: {.callout-note title="Your turn 4 answers"}
-1. See code below.
-2. **The conditional AMCEs look like there's a meaningful gap**: male respondents show only a 2 percentage point preference for female candidates (p = 0.094, not significant), while female respondents show a 6 percentage point preference (p < 0.001). But this apparent gap partly reflects differences in how each group views *male* candidates, not just female candidates.
-3. **On the absolute scale**, both groups prefer female candidates, but female respondents do so more strongly: male respondents select male candidates 49.0% and female candidates 51.0% of the time; female respondents select male candidates 47.0% and female candidates 53.1% of the time.
-4. **The sex-based differences are weaker than the party-based differences.** Female respondents are ≈2 percentage points less likely than male respondents to select a male candidate and ≈2 percentage points more likely to select a female candidate (both statistically significant). The partisan gaps were roughly twice as large (~4--5 percentage points in each direction).
-:::
-
-```{r}
-#| label: your-turn-4-answers
-#| code-fold: true
-
-model_resp_gender <- lm(
-  choice ~ (gender +
-    years_politics +
-    spouse_occupation +
-    occupation +
-    n_children +
-    age) *
-    resp_gender,
-  data = candidates
-)
-
-# Conditional AMCEs by respondent gender
-avg_comparisons(
-  model_resp_gender,
-  variables = "gender",
-  by = "resp_gender",
-  vcov = ~resp_id
-)
-
-# Conditional marginal means by respondent gender
-avg_predictions(
-  model_resp_gender,
-  by = c("gender", "resp_gender"),
-  vcov = ~resp_id
-)
-
-# Difference in marginal means across respondent gender groups
-avg_comparisons(
-  model_resp_gender,
-  variables = "resp_gender",
-  by = "gender",
-  vcov = ~resp_id
-)
 ```
 
 ## Oh no! 2: Preference cycles and average feature choice probability (AFCP)
@@ -712,79 +519,11 @@ The analysis above explored head-to-head dynamics for candidate occupation. Expl
 # Do stuff here
 ```
 
-::: {.callout-note title="Your turn 5 answers"}
-1. **Farmer and Doctor are essentially tied against Unmarried**, each winning about 57% of direct matchups. This is a mild surprise: the simple AMCEs suggested Farmer (+8 percentage points) had a meaningful edge over Doctor (+6 percentage points) relative to Unmarried, but in actual pairings the two perform nearly identically.
-2. **Centered at 0.5, both Farmer (+6.9 percentage points) and Doctor (+7.0 percentage points) beat Unmarried by roughly the same margin.** The AFCP erases the apparent Farmer-vs.-Doctor gap from the simple AMCEs.
-3. **The ordering does shift when Doctor is the competitor.** Farmer beats Doctor 53.8% of the time, while Unmarried only wins 43.0% of the time against Doctor. So Farmer still beats Doctor, but the relative advantage of being "married at all" over being unmarried is now clearly visible.
-4. **No preference cycle.** All three pairings are visible across the two `avg_comparisons()` chunks: Farmer beats Doctor, Doctor beats Unmarried, and Farmer beats Unmarried---the ordering Farmer > Doctor > Unmarried is transitive. The interesting story is instead how the AFCP reveals that the Farmer-vs.-Doctor gap in the simple AMCEs was overstated: in direct competition, Farmer only edges Doctor by ~4 pp, but both easily beat Unmarried by ~7 pp.
-:::
-
-```{r}
-#| label: your-turn-5-answers
-#| code-fold: true
-
-# AFCPs for spouse occupation competing against "Unmarried"
-avg_predictions(
-  model_afcp,
-  by = c("spouse_occupation", "spouse_occupation_alt"),
-  newdata = subset(spouse_occupation_alt == "Unmarried"),
-  vcov = ~resp_id
-)
-
-# Centered at 0.5
-avg_predictions(
-  model_afcp,
-  by = c("spouse_occupation", "spouse_occupation_alt"),
-  transform = \(x) x - 0.5,
-  newdata = subset(spouse_occupation_alt == "Unmarried"),
-  vcov = ~resp_id
-)
-
-# AFCPs for spouse occupation competing against "Doctor"
-avg_predictions(
-  model_afcp,
-  by = c("spouse_occupation", "spouse_occupation_alt"),
-  newdata = subset(spouse_occupation_alt == "Doctor"),
-  vcov = ~resp_id
-)
-
-# Pairwise differences when competing against "Unmarried"
-avg_comparisons(
-  model_afcp,
-  variables = list(spouse_occupation = "pairwise"),
-  newdata = subset(spouse_occupation_alt == "Unmarried"),
-  vcov = ~resp_id
-)
-
-# Pairwise differences when competing against "Doctor"
-avg_comparisons(
-  model_afcp,
-  variables = list(spouse_occupation = "pairwise"),
-  newdata = subset(spouse_occupation_alt == "Doctor"),
-  vcov = ~resp_id
-)
-```
 
 ## Reflection questions
 
 1. The main lesson from "Oh no! 1" is that comparing conditional AMCEs across subgroups can be misleading. In your own words, why does the AMCE comparison fail? When would comparing AMCEs across groups give you roughly the right answer?
 
-::: {.callout-note title="Answer"}
-AMCEs are differences from a reference level---they answer "how much does switching from Male to Female shift the probability of selection?" When you compare this quantity across groups, you are comparing *deviations from a baseline*, but each group's baseline may differ. Democrats' 7.5 percentage point AMCE means that Democrats prefer female candidates 7.5 percentage points over male candidates; Republicans' −1 percentage point AMCE means Republicans are essentially indifferent. The apparent 8.5 percentage point gap across parties conflates two things: how Democrats evaluate female candidates *and* how Democrats evaluate male candidates compared to Republicans. The comparison would give roughly the right answer when both groups have similar absolute support for the reference category---i.e., when the baselines are roughly equal. The marginal mean differences avoid this problem entirely because they express preferences on an absolute probability scale with no hidden reference category.
-:::
-
 2. The AFCP estimand accounts for the context of the competing profile. Can you think of a research question where context-sensitivity would matter a lot? Can you think of one where a standard AMCE would be perfectly adequate?
 
-::: {.callout-note title="Answer"}
-Context sensitivity matters most when preferences are inherently comparative or non-transitive. For example, voters might consistently prefer "the more moderate candidate" in any given pair---producing cycles where moderate beats conservative, conservative beats liberal, and liberal beats moderate. Studies of racial or gender bias might also find that evaluations of a minority candidate depend heavily on who they are paired against. Standard AMCEs would miss these dynamics entirely.
-
-AMCEs are adequate when preferences are primarily driven by absolute attribute value rather than relative comparison. If you are studying whether more political experience always increases candidate support regardless of what the competitor looks like, the AMCE captures that cleanly. The AMCE is also simpler to interpret and communicate, and is fine for the most common goal of estimating average causal effects of specific attributes.
-:::
-
 3. Conjoint designs assume that attribute levels are randomly and independently assigned, including "implausible" combinations like a 29-year-old candidate with 8 years of political experience. Should we worry about this? What would happen to causal inference if respondents mentally discounted implausible profiles?
-
-::: {.callout-note title="Answer"}
-This is a real concern, sometimes called the profile realism problem. If respondents mentally disqualify implausible profiles---ignoring stated attributes or refusing to engage seriously with the profile---those observations contribute noise rather than information. AMCEs estimated from the full data may reflect a mixture of "realistic" and "unrealistic" profile responses, potentially distorting estimates.
-
-Randomization still protects the marginal effects of individual attributes from confounding, but the estimates may not represent preferences for realistic profiles. Some researchers address this by constraining the design to only realistic attribute combinations, though this complicates analysis and can introduce other biases. In practice, many conjoint designs include a moderate number of implausible profiles without major problems---but the issue deserves consideration when attributes are strongly correlated in the real world (e.g., age and years of experience genuinely co-vary for real candidates).
-:::

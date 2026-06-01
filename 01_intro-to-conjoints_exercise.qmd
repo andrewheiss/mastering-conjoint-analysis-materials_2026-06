@@ -1,0 +1,496 @@
+---
+title: "Introduction to conjoint analysis"
+subtitle: "Day 1 --- Exercise"
+bibliography: references.json
+toc: true
+---
+
+## Overview
+
+Before we explore the formal (and fancy) statistical machinery for analyzing conjoint data, we'll build the intuition behind it by exploring a simple dataset by hand.
+
+### Data
+
+The data is in `data/choco_candy.csv`, and it's simulated data for a hypothetical experiment about consumer preferences for candy features. It comes from p. 292 in @Kuhfeld2010, a [SAS technical note](http://support.sas.com/techsup/technote/mr2010f.pdf) about how to run multinomial models in SAS. Instead of copying/pasting from the PDF, [I found a version of it here](https://github.com/sangwoo-statistics/dataset), cleaned up by Sangwoo Kim (who also has [a YouTube tutorial](https://www.youtube.com/watch?v=ra8Y2FjRqOE) using the same candy data).
+
+In this experiment, respondents were asked to choose which of these kinds of candies they’d want to buy. Respondents only saw this question one time and all possible options were presented simultaneously.
+
+| Attribute |    A    |   B   |    C    |  D   |    E    |   F   |    G    |  H   |
+|-----------|:-------:|:-----:|:-------:|:----:|:-------:|:-----:|:-------:|:----:|
+| Chocolate |  Milk   | Milk  |  Milk   | Milk |  Dark   | Dark  |  Dark   | Dark |
+| Center    |  Chewy  | Chewy |  Soft   | Soft |  Chewy  | Chewy |  Soft   | Soft |
+| Nuts      | No nuts | Nuts  | No nuts | Nuts | No nuts | Nuts  | No nuts | Nuts |
+| Choice    |    ○    |   ○   |    ○    |  ○   |    ○    |   ○   |    ○    |  ○   |
+
+### Terminology
+
+In this design, there are three characteristics or attributes or features^[These terms are all used interchangeably!] of the candy, and each of the attributes/features have two levels:
+
+| Attribute / feature | Column | Levels                                     |
+|:--------------------|:-------|:-------------------------------------------|
+| Chocolate           | `dark` | Milk chocolate (`0`), dark chocolate (`1`) |
+| Center              | `soft` | Chewy center (`0`), soft center (`1`)      |
+| Nuts                | `nuts` | No nuts (`0`), has nuts (`1`)              |
+
+With three binary attributes, there are $2^3 = 8$ possible candy profiles. Every respondent in this experiment saw all 8 profiles at the same time, making this a *full factorial design*. This is actually fairly uncommon in conjoint studies---most of the time, respondents are shown many repeated sets of random profiles instead, or a *fractional factorial design*. 
+
+## Get a feel for the data
+
+Conjoint data is structured a little differently from other more common datasets. It is generally *long*, with one row per alternatives within tasks within respondents. In this case, there's only one task---each respondent only saw one set of alternatives---but in most other cases, respondents see multiple sets of alternatives. We can visualize the hierarchical structure of the data in @fig-chocolate-hierarchy:
+
+::: {#fig-chocolate-hierarchy}
+
+![](img/candy-multilevel-structure.svg){width="100%"}
+
+Multilevel experimental structure, with candy choices $y_{\text{A}\dots\text{H}}$ nested in subjects
+
+:::
+
+Let's load the data and explore it and see what this looks like in practice:
+
+```{r}
+#| label: load-libraries-data
+#| warning: false
+#| message: false
+
+library(tidyverse)
+library(patchwork)
+library(marginaleffects)
+library(parameters)
+options(parameters_cimethod = FALSE)
+
+choco <- read_csv("data/choco_candy.csv")
+
+glimpse(choco)
+```
+
+::: {.callout-tip title="Your turn 1"}
+Use your intuition, along with code you write in the chunk below, to answer these questions:
+
+1. What does one row represent?
+2. How many respondents are there?
+3. Each respondent has 8 rows. Why 8?
+4. The `choice` column is 0 or 1. What does that mean?
+5. What would you expect the average of `choice` to be? Why?
+:::
+
+```{r}
+#| label: your-turn-1
+
+# Do stuff here
+```
+
+
+## Which overall profiles are the most popular?
+
+Let's look at which profiles were chosen the most often:
+
+```{r}
+#| label: popular-profiles
+
+profile_popularity <- choco |>
+  group_by(dark, soft, nuts) |>
+  summarize(
+    times_shown = n(),
+    n_chosen = sum(choice),
+    pct_chosen = n_chosen / times_shown
+  ) |>
+  mutate(
+    profile_label = paste0(
+      if_else(dark == 1, "Dark", "Milk"),
+      " + ",
+      if_else(soft == 1, "Soft", "Chewy"),
+      " + ",
+      if_else(nuts == 1, "Nuts", "No nuts")
+    )
+  )
+
+profile_popularity
+```
+
+::: {.callout-tip title="Your turn 2"}
+Don't run any code or try to do any calculations---just eyeball the results and answer these questions:
+
+1. Which profile is the most popular? Does this make intuitive sense?
+2. What's the range of selection rates? Are the differences in popularity large or small?
+3. Which attributes seem to make profiles more or less popular?
+:::
+
+## Influence of attributes in isolation
+
+That third question of which attributes make profiles more or less popular is the main purpose of conjoint analysis. We don't actually care which of these 8 profiles is the best. If you were the product manager responsible for making candy, knowing that 50% of respondents chose dark + chewy + no nuts doesn't necessarily mean that you should only make that exact kind of candy---with actual conjoint studies, it's possible to have hundreds of possible profiles, many of which aren't even feasible, so we're not really focused on final product selection here. What we care about instead is how these attributes influence consumer preferences.
+
+Let's compute the average selection rate for each attribute level, ignoring all other attributes (or holding all other attributes constant). This is known as the *marginal mean*. Here's some code for dark vs. milk:
+
+```{r}
+#| label: mm-dark-milk
+
+choco |>
+  group_by(dark) |>
+  summarize(
+    n_rows = n(),
+    n_chosen = sum(choice),
+    prop_chosen = n_chosen / n_rows,
+    mean_choice = mean(choice)  # Or just this
+  )
+```
+
+::: {.callout-tip title="Your turn 3"}
+Use your intuition, along with code you write in the chunk below, to answer these questions:
+
+1. What are the marginal means for soft vs. chewy and nuts vs. no nuts?
+2. Which attribute shows the biggest difference in the proportion of selection across levels?
+3. What does it mean if an attribute has a huge difference between levels? A small difference between levels?
+:::
+
+```{r}
+#| label: your-turn-3
+```
+
+Looking at marginal means like this is useful for seeing the relative influence of each of the attribute levels, but they don't provide much actionable information. For that, we need to do a little more.
+
+As we talked about in the slides, there's a disciplinary split in what that "little more" entails and what its purpose is. In an *overly broad generalization*, I categorize these into two approaches:
+
+- **Causal inference**, popular in social science disciplines like political science, economics, and public policy
+- **Preference description**, popular in marketing science (and also economics)
+
+**This isn't a strict disciplinary split!** It's mostly just a handy heuristic. Political scientists can do market simulations [@ChaudhryDotsonHeiss2021] and marketing researchers care about causality. The difference is really in what estimand is emphasized.
+
+## Causal inference with conjoints
+
+::: {.callout-tip title="Your turn 4"}
+Use your intuition, along with code you write in the chunk below, to answer these questions:
+
+1. Dark chocolate has a higher proportion of selection than milk. Does that mean that dark chocolate *caused* higher selection? Why or why not?
+:::
+
+Social scientists are often concerned with causal mechanisms---levers that can be pulled to change something in the world. For instance, if we switched a candy from milk chocolate to dark chocolate, what would happen to the probability of someone selecting it?
+
+We'll cover this in way more depth on Day 2. For now, here's a little preview.
+
+### AMCEs
+
+The difference between marginal means is called the Average Marginal Component Effect (AMCE):
+
+```{r}
+choco |>
+  group_by(dark) |>
+  summarize(
+    marginal_mean = mean(choice)
+  ) |> 
+  mutate(amce = marginal_mean - lag(marginal_mean))
+```
+
+Due to randomization, the AMCE is a causal estimand. In this full factorial design, every combination of attribute levels appears equally often---the attributes are **orthogonal**. That means dark vs. milk chocolate is completely uncorrelated with soft vs. chewy and nuts vs. no nuts. Any difference in selection rates between levels of one attribute therefore cannot be due to confounding from another. Let's verify:
+
+```{r}
+#| label: profile-balance
+
+choco |>
+  count(dark, soft, nuts)
+```
+
+In this case, each profile appeared exactly 10 times (since there were 10 respondents and each one saw all the profiles). In larger, more realistic experiments where respondents only see a handful of hundreds of possible profiles, the profiles will still be roughly balanced, on average, due to randomization.
+
+### Marginal means and AMCEs with regression
+
+As we talked about in the slides, regression is just a fancy way to calculate averages. We can calculate both marginal means and the differences between marginal means (or AMCEs) with a regression model.
+
+```{r}
+#| label: model-ols
+
+model_simple <- lm(choice ~ dark + soft + nuts, data = choco)
+model_parameters(model_simple)
+```
+
+::: {.callout-tip title="Your turn 5"}
+1. What does the intercept represent in this model? (Hint: what profile has dark = 0, soft = 0, nuts = 0?)
+2. Interpret the coefficients for `dark`, `soft`, and `nuts`
+:::
+
+This is a linear probability model (LPM), or regular old OLS with a binary outcome. The coefficients are already on the percentage-point scale, which makes them interpretable directly. In practice, though, it's more useful to report marginal means and their differences---these generalize to any model family and are easier to communicate. The `{marginaleffects}` package computes both without needing to interpret raw coefficients.
+
+Marginal means are the average predicted selection rate for each attribute level, holding all other attributes at their observed distribution. We can use `avg_predictions()` to find these:
+
+```{r}
+#| label: model-mms
+
+avg_predictions(model_simple, by = "dark")
+avg_predictions(model_simple, by = "soft")
+avg_predictions(model_simple, by = "nuts")
+```
+
+AMCEs are the difference between marginal means. This is the causal effect of each attribute on the probability of selection, holding all other attributes constant. Technically, in a simple OLS model, these are just the coefficients from the model, but it's better to use `avg_comparisons()`, especially when working with interaction terms, polynomial terms, or different kinds of models (like logistic regression, multinomial logistic regression, and so on):
+
+```{r}
+#| label: model-amces
+
+avg_comparisons(model_simple, variable = c("dark", "soft", "nuts"))
+```
+
+We have one big problem with that regression model, though! We've been assuming that all 80 rows in `choco` are independent observations, but they're not at all. Each of the 10 respondents contributed 8 choices, and each respondent's choice is correlated with the other. This distorts the standard errors for each of the estimates.
+
+We'll see way more about how to deal with this on Day 2---we can actually use modeling techniques to directly model the nested structure of choices among alternatives within respondents. For now, we can just cluster the standard errors by subject:
+
+```{r}
+#| label: model-amces-clustered
+
+avg_comparisons(model_simple, variable = c("dark", "soft", "nuts"), vcov = ~subj)
+```
+
+### Plots
+
+Conjoints lend themselves to great visualizations! Check out the marginal means and AMCEs in @fig-mms-amces.
+
+```{r}
+#| label: fig-mms-amces
+#| fig-width: 6
+#| fig-height: 4
+#| fig-cap: Marginal means and AMCEs for the example candy conjoint
+#| code-fold: true
+
+# Little helper function for formatting numbers as percentage points
+label_pp <- scales::label_number(
+  accuracy = 1,
+  scale = 100,
+  suffix = " pp.",
+  style_negative = "minus"
+)
+
+# Some lookup tables to help make all the attributes and levels plot in the right order
+attributes_levels <- tribble(
+  ~attribute , ~attribute_nice  , ~level               , ~level_num ,
+  "dark"     , "Chocolate type" , c("Milk", "Dark")    , 0:1        ,
+  "soft"     , "Center texture" , c("Chewy", "Soft")   , 0:1        ,
+  "nuts"     , "Nuts"           , c("No nuts", "Nuts") , 0:1
+)
+
+attribute_lookup <- attributes_levels |>
+  select(-level, -level_num) |>
+  mutate(attribute_nice = fct_inorder(attribute_nice))
+
+attribute_levels_lookup <- attributes_levels |>
+  unnest(c(level, level_num)) |>
+  rename(level_nice = level, level = level_num) |>
+  mutate(across(c("attribute_nice", "level_nice"), \(x) fct_inorder(x)))
+
+# We need to calculate predictions for each attribute in isolation, then combine
+# them. We could do it like this, but this requires a bunch of data wrangling
+# work and it's gross.
+# marginal_means <- bind_rows(
+#   avg_predictions(model_simple, by = "dark") |> mutate(attribute = "dark"),
+#   avg_predictions(model_simple, by = "soft") |> mutate(attribute = "soft"),
+#   avg_predictions(model_simple, by = "nuts") |> mutate(attribute = "nuts")
+# )
+
+# So we use some map2() magic from {purrr} instead
+marginal_means <- attribute_lookup |>
+  mutate(
+    results = map2(
+      attribute,
+      attribute_nice,
+      \(att, att_nice) {
+        avg_predictions(model_simple, by = att) |>
+          # avg_predictions() names the column with the "by" argument, like
+          # "gender", "age", etc., so we need to rename it to something
+          # consistent for when the rows all get combined
+          rename(level = all_of(att))
+      }
+    )
+  ) |>
+  unnest(results) |>
+  left_join(
+    attribute_levels_lookup,
+    by = join_by(attribute, attribute_nice, level)
+  )
+
+# Make a coefficient plot
+p1 <- ggplot(marginal_means, aes(x = estimate, y = level_nice)) +
+  geom_pointrange(aes(xmin = conf.low, xmax = conf.high)) +
+  geom_vline(xintercept = 1 / 8, linetype = "dashed", color = "grey50") +
+  facet_wrap(vars(attribute_nice), scales = "free_y", ncol = 1) +
+  labs(
+    x = "Marginal mean (probability of selection)",
+    y = NULL,
+    title = "Marginal means"
+  )
+
+# Calculate AMCEs
+amces <- avg_comparisons(model_simple, variables = c("dark", "soft", "nuts"))
+
+reference_rows <- amces |>
+  separate_wider_delim(contrast, delim = " - ", names = c("level", "ref")) |>
+  select(term, level = ref) |>
+  distinct() |>
+  mutate(estimate = 0, conf.low = 0, conf.high = 0)
+
+plot_data <- amces |>
+  separate_wider_delim(contrast, delim = " - ", names = c("level", "ref")) |>
+  bind_rows(reference_rows) |> 
+  mutate(level = as.numeric(level)) |> 
+  left_join(attribute_levels_lookup, by = join_by(term == attribute, level))
+
+# Make another coefficient plot
+p2 <- ggplot(plot_data, aes(x = estimate, y = level_nice)) +
+  geom_pointrange(aes(xmin = conf.low, xmax = conf.high)) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_x_continuous(label = label_pp) +
+  facet_wrap(vars(attribute_nice), scales = "free_y", ncol = 1) +
+  labs(x = "AMCE (percentage points)", y = NULL, title = "AMCEs")
+
+p1 | p2
+```
+
+## Preference description with conjoints
+
+While social science generally considers attributes to be causal levers, marketing science looks at the differences between attribute influence to help understand consumer preferences and think of product profiles and market shares.
+
+We'll look at this in a lot more detail on Day 3. For now, here's a quick preview.
+
+::: {.callout-caution title="Same model; different estimands"}
+While I divided up these general approaches into causal inference and preference description, they're still both done by the same model. For marginal means and AMCES, we generally work with percentage points; for utility and importance and market share and willingness-to-pay, we generally work with log odds. They can both be estimated with logistic regression. We only used LPM earlier because it's quick and easy (and because so many social scientists love using it), but you can also get AMCEs out of far more complex models---I did this in @ChaudhryDotsonHeiss2025.
+:::
+
+### Part-worth utilities
+
+With marketing-focused work we typically use logistic regression instead of OLS.^[In practice, we actually use more sophisticated flavors of logistic regression, like multilevel multinomial logit. This, in part, allows us to relax some core assumptions about vanilla logit, like the independence of irrelevant alternatives (IIA) assumption that holds that the relative odds between two products are unaffected by adding or removing other products.] These coefficients are called part-worth utilities and they represent the relative value each attribute level adds to a product, measured on the log-odds scale.
+
+::: {.callout-caution title="Oversimplification!"}
+In real preference-focused models, part-worths are typically centered so that they sum to zero within each attribute. Here I'm using dummy coding for simplicity, which means the reference level has utility = 0 instead of some actual value. We'll cover centering on Day 3---don't worry!
+:::
+
+```{r}
+#| label: model-logit
+model_logit <- glm(
+  choice ~ dark + soft + nuts,
+  family = binomial(link = "logit"),
+  data = choco
+)
+
+model_parameters(model_logit)
+```
+
+As with the marginal means and AMCEs earlier, it's generally better to use {marginaleffects} here instead of interpreting raw coefficients, since it can deal with interaction terms and polynomials and other weird things.^[And *technically* all these standard errors are wrong because---just like with the OLS models before---we're assuming that each row is independent instead of clustered within respondent. In reality, most people use fancier things like multilevel models to account for that hierarchical structure. To account for that here, we can include `vcov = ~subj` in `avg_comparisons().]
+
+```{r}
+#| label: marginaleffects-part-worths
+
+avg_comparisons(
+  model_logit,
+  variables = c("dark", "soft", "nuts"),
+  type = "link"  # Return the results as log odds, not percentage points
+)
+
+# You can use logistic regression to find AMCEs too!
+# avg_comparisons(model_logit, variables = c("dark", "soft", "nuts"))
+```
+
+Interpreting these things is tricky, since log odds are generally pretty unintuitive. You can look for a couple things with them:
+
+- **Sign**: positive = preferred over the reference level, negative = dispreferred.
+- **Relative magnitude across attributes**: a coefficient of −2.6 for `soft` vs. 1.8 for `dark` means that that aversion to a soft center is a stronger driver of choice than preference for dark chocolate
+
+In practice, we don't typically report raw log odds-scale part-worth utilities. Instead, these values serve as inputs to other estimands that are more interpetable.
+
+::: {.callout-tip title="Your turn 6"}
+1. Compare the utility coefficients from `model_logit` to the LPM coefficients from `model_simple`. Do the signs agree? Does the ranking of attributes by magnitude agree?
+2. Compare `avg_comparisons(model_logit, ..., type = "response")` to the LPM AMCEs. Should they be similar or very different? Why?
+:::
+
+### Relative attribute importance
+
+Utilities tell us *which direction* each level pulls preferences. But since they're on the log-odds scale, they can't directly answer "which attribute matters most overall?" For that, we can calculate relative importance, or the range of utilities within an attribute (max − min), expressed as a share of the total range across all attributes. With binary attributes (one coefficient, reference = 0), the range is simply the absolute value of the coefficient. When using attributes with more levels, you'd calculate the difference between the maximum and minimum coefficient within that attribute (or fancier things like variance-based importance).
+
+The neat thing about this is that it incorporates the size of the range into the size of the relative importance. An attribute with levels with a very small range implies that the different levels are all relatively similar, so the relative importance values would also be relatively similar; an attribute with levels with a huge range implies that there's more variation in importance.
+
+```{r}
+#| label: relative-importance
+
+# Get the part-worth utilities
+avg_comparisons(
+  model_logit,
+  variables = c("dark", "soft", "nuts"),
+  type = "link"  # Return the results as log odds, not percentage points
+) |> 
+  as_tibble() |> 
+  select(term, utility = estimate) |> 
+  # Calculate the range within each level
+  # Since each of these attributes is binary, the range is just |utility|
+  mutate(range = abs(utility)) |> 
+  # Normalize to 100%
+  mutate(importance = range / sum(range) * 100) |> 
+  arrange(desc(importance))
+```
+
+::: {.callout-tip title="Your turn 7"}
+1. Which attribute is most important? Does the ranking match your intuition from the AMCEs earlier?
+2. What's the relationship between relative importance and AMCE magnitude? How are they similar as summaries of "how much does this attribute matter"? How do they differ?
+3. Suppose you added a fourth attribute---like wrapper color---that people genuinely don't care about (its two levels have essentially identical utilities). How would that affect the reported importance of `dark`, `soft`, and `nuts`?
+:::
+
+### Market simulation
+
+The real power of working with utilities is market simulation: given estimated preferences, we can predict how customers would divide among a set of competing products. To do this, we define a hypothetical market of products with different attributes, plug those into the model to get predicted utilities, then use the [softmax function](https://en.wikipedia.org/wiki/Softmax_function) to convert the logit-scale predictions into normalized probabilities that sum to 100%.
+
+For example, imagine the candy market looked like this (everything's chewy in this world):
+
+```{r}
+#| label: define-market
+
+candy_market <- tribble(
+  ~name                    , ~dark , ~soft , ~nuts ,
+  "Dark + Chewy + Nuts"    ,     1 ,     0 ,     1 ,
+  "Dark + Chewy + No nuts" ,     1 ,     0 ,     0 ,
+  "Milk + Chewy + No nuts" ,     0 ,     0 ,     0
+)
+candy_market
+```
+
+We can predict each product's utility on the logit scale and compute its predicted market share. This shows us the predicted fraction of customers that each product would attract if these were the only three candies available:
+
+```{r}
+#| label: market-simulation
+
+# Predict each product's utility, then compute market shares
+predictions(model_logit, newdata = candy_market, type = "link") |> 
+  as_tibble() |> 
+  select(name, dark, soft, nuts, utility = estimate) |> 
+  mutate(market_share = exp(utility) / sum(exp(utility)))
+```
+
+::: {.callout-tip title="Your turn 8"}
+1. Add a 4th product to `candy_market`: Milk + Chewy + Nuts (dark = 0, soft = 0, nuts = 1). Rerun the simulation. How does adding this option change the shares of the existing three products? Does it take share equally from all of them?
+2. Now take that four-product market and make it so it only has soft-center options (soft = 1). Predict the shares and compare them to the chewy-center market. What do you notice? Can you explain why?
+3. What happens to the predicted share for Dark + Chewy + Nuts as you add more and more competitors? Try adding all 8 profiles to the market. Does the winner change?
+:::
+
+```{r}
+#| label: your-turn-8
+
+# Do stuff here
+```
+
+### Willingness to pay
+
+Relative importance and market shares are useful, but the most immediately actionable output for marketers and economists is willingness to pay (WTP), or how much more (or less) would a customer pay for a given attribute level.
+
+We can only calculate this if one of the attributes in the experimental design is price. This candy example doesn't have one, so we can't show it here, but we'll cover this on Day 3!
+
+Just as a sneak preview, we calculate this by dividing the log-odds-scale coefficients for the feature of interest and for price:
+
+$$
+\text{WTP} = - \frac{\beta_\text{feature}}{\beta_\text{price}}
+$$
+
+This gives us the dollar amount a consumer would be willing to pay (or would need to be compensated) for that feature.
+
+
+## Reflection questions
+
+1. Conjoint analysis lets us say "dark chocolate *caused* a 10 percentage point increase in the probability of selection." What features of the design justify this causal language? What assumptions are we making?
+
+2. The name "conjoint" comes from evaluating attributes *together* (jointly). How would results differ if we asked respondents to rate each attribute separately on a 1--10 scale, rather than choosing among complete profiles?
+
+3. This candy example used a full factorial design where respondents saw all 8 profiles simultaneously. Imagine that you have 6 attributes with 4 levels each. A full factorial version of that design has $4^6 = 4,096$ profiles. That's impossible to show one person! How would you handle this?
+
+4. We saw two ways to use conjoint data: the causal approach and the marketing preference/utility approach. When would each be more useful? What does the AMCE tell us that utilities don't, and vice versa?

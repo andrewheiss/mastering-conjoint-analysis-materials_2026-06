@@ -126,53 +126,6 @@ Use the code chunk below to answer these questions about the data:
 # Do stuff here
 ```
 
-::: {.callout-note title="Your turn 1 answers"}
-1. **One row = one minivan alternative shown to one respondent in one task.** The fundamental unit is respondent × task × alternative.
-2. **200 respondents; 15 tasks per respondent; 3 alternatives per task.** Total rows = 200 × 15 × 3 = 9,000.
-3. **`mean(choice)` should be 1/3 ≈ 0.333.** Each task has exactly one chosen alternative among three, so exactly one-third of rows have `choice = 1`.
-4. **`ques` is the within-respondent task number (1--15).** The same value `ques = 1` appears for every respondent's first task---it does not uniquely identify a choice set. `choice_id` is a globally unique identifier (`resp_id_ques`) that tells `{mclogit}` which three rows competed against each other. The model needs to know the groups; `choice_id` provides that.
-5. **200 respondents × 15 tasks = 3,000 distinct choice sets.**
-6. **3 seat configurations × 2 cargo sizes × 3 engine types × 3 prices = 3 * 2 * 3 * 3 = 54 potential profiles**
-:::
-
-```{r}
-#| label: your-turn-1-answers
-#| collapse: true
-
-# 200 respondents, 15 tasks per respondent, 3 alternatives per task
-minivans |>
-  summarize(
-    n_respondents = n_distinct(resp_id),
-    n_tasks = n_distinct(ques),
-    n_alts = n_distinct(alt)
-  )
-
-# Mean of choice = 1/3
-minivans |>
-  summarize(avg_choice = mean(choice))
-
-# ques goes 1-15, not unique across respondents
-minivans |>
-  count(ques)
-
-# choice_id: 3,000 unique choice sets
-minivans |>
-  summarize(n_choice_sets = n_distinct(choice_id))
-
-# Possible profiles
-3 * 2 * 3 * 3
-
-# Or more programmatically
-minivans |>
-  summarize(
-    across(
-      c(seat, cargo, eng, price),
-      \(x) nlevels(x)
-    )
-  ) |> 
-  mutate(combinations = reduce(c_across(everything()), `*`))
-```
-
 Unlike the candy example from Day 1, and similar to the candidate example from Day 2, this experiment has one additional nested layer, since respondents were shown multiple tasks (`ques`). I find that it's helpful to visualize the hierarchy of each respondents' 45 rows in @fig-minivan-hierarchy.
 
 ::: {#fig-minivan-hierarchy}
@@ -246,13 +199,6 @@ Look at the dummy-coded utilities above and answer these questions without runni
 2. What does it mean that Gas has utility = 0? Does that mean consumers don't care about gas engines?
 3. Price levels have negative utilities for \$35,000 and \$40,000. What does that mean?
 4. Can you say whether engine type matters more than seating capacity based on these dummy-coded utilities alone? Why or why not?
-:::
-
-::: {.callout-note title="Your turn 2 answers"}
-1. **Gas has the highest utility** (= 0 as the reference level), followed by Hybrid (-0.81), then Electric (-1.53). Consumers in this sample actually prefer gas over both alternatives---the electric engine has the *lowest* utility of the three. This makes sense for data collected in the early 2010s when electric vehicles were still niche; you'd likely see very different results today.
-2. **Gas utility = 0 is a modeling artifact and doesn't actually mean there's no utility.** Gas is the reference level by construction. It doesn't mean consumers are indifferent to gas engines---it means all other engines are measured *relative to* gas. If we had set hybrid as the reference, gas would have a negative utility and hybrid would be 0.
-3. **Negative utilities for higher prices reflect price sensitivity.** Consumers prefer cheaper minivans. Utilities fall as price rises: \$30,000 = 0 (reference), \$35,000 < 0, \$40,000 << 0.
-4. **No!** The utilities are measured relative to different arbitrary baselines. Engine's "range" starts from gas = 0; seating's range starts from 6 seats = 0. Comparing across attributes requires centering---see below.
 :::
 
 ### Center coding
@@ -373,20 +319,6 @@ utilities |>
 # Do stuff here
 ```
 
-::: {.callout-note title="Your turn 3 answers"}
-1. **The engine level with the highest utility is the most preferred**; the one with the most negative centered utility is the least preferred. A centered utility near zero means that level is approximately at the average for its attribute---consumers are roughly indifferent between it and a "typical" engine.
-2. **Engine and Price should have the largest ranges**, confirming they drive choice the most.
-:::
-
-```{r}
-#| label: your-turn-3-answers
-
-# Ranges from centered utilities (our main utilities dataframe)
-utilities |>
-  group_by(attribute) |>
-  summarize(range_centered = diff(range(estimate)))
-```
-
 ### Visualizing utilities
 
 Since these centered part-worth utilities are on the same scale, we can visualize them to help compare which levels provide the most and least utility:
@@ -475,27 +407,6 @@ importance
 # Do stuff here
 ```
 
-::: {.callout-note title="Your turn 4 answers"}
-1. **Engine type and price are the two most important attributes.** Cargo space is the least important. This matches the utility plots: the ranges for engine and price are the widest. Practically, this is a plausible result---consumers care a lot about whether they're buying a gas vs. electric vehicle, and price always matters.
-2. **Price has high importance, which means the market is price-sensitive.** The \$10,000 range from \$30,000 to \$40,000 creates substantial variation in selection probability. For a product manager, this signals that pricing decisions will strongly affect market penetration---a \$5,000 premium needs to be justified by feature improvements that consumers actually value.
-3. See code below.
-:::
-
-```{r}
-#| label: your-turn-4-answers
-
-importance |>
-  mutate(attribute_nice = fct_reorder(attribute_nice, importance_pct)) |>
-  ggplot(aes(x = importance_pct, y = attribute_nice)) +
-  geom_col() +
-  scale_x_continuous(labels = label_percent()) +
-  labs(
-    x = "Relative importance (%)",
-    y = NULL
-  )
-```
-
-
 ## Willingness to pay
 
 The most directly actionable output in marketing conjoint is willingness to pay (WTP): the dollar amount a consumer would trade for a feature change. This is only possible when one of the conjoint attributes is price, which we have this time! (We didn't with the candy and candidate examples).
@@ -567,39 +478,6 @@ wtp_results
 
 # Do stuff here
 ```
-
-::: {.callout-note title="Your turn 5 answers"}
-1. **WTP for Electric vs. Gas is about -\$8.8K**, meaning consumers in this sample need to be *compensated* roughly \$8,800 to accept an electric engine over gas---not the other way around. (lol this is weird nowadays; this data was made in the early 2010s, and I'd guess that nowadays people are more willing to pay for electric cars). For a manufacturer in that context, offering an electric variant at the same price as gas would dramatically hurt sales; a very large price discount would be required to move electric inventory.
-2. **Both Hybrid (-\$4.7K) and Electric (-\$8.8K) have negative WTP**, so neither is more preferred than Gas. Electric is substantially worse than Hybrid in this sample---nearly twice the penalty. The confidence intervals don't overlap, confirming the gap is real.
-3. **Surprising but consistent with the data: 6 seats is most preferred.** Both 7-seat (≈-\$3,100) and 8-seat (≈-\$1,800) configurations have negative WTP vs. 6 seats. The 8-seat penalty is smaller than the 7-seat penalty---consumers are slightly less averse to 8 seats than 7, which might reflect perceptions about a "proper" large-family van vs. an awkward intermediate size. This is a good reminder that WTP estimates describe the sample's actual preferences, which may not match your priors.
-4. See code below.
-:::
-
-```{r}
-#| label: your-turn-5-answers
-#| code-fold: true
-
-wtp_results |>
-  mutate(
-    hypothesis = fct_reorder(hypothesis, estimate),
-    attribute = case_when(
-      str_detect(hypothesis, "seats") ~ "Seating",
-      str_detect(hypothesis, "cargo") ~ "Cargo",
-      .default = "Engine"
-    ),
-  ) |>
-  ggplot(aes(x = estimate, y = hypothesis, color = attribute)) +
-  geom_pointrange(aes(xmin = conf.low, xmax = conf.high)) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
-  scale_x_continuous(labels = label_dollar(scale = 1000)) +
-  scale_color_manual(values = clrs[c(2, 7, 8)]) +
-  labs(
-    x = "WTP",
-    y = NULL,
-    color = "Attribute"
-  )
-```
-
 
 ## Market simulation
 
@@ -682,98 +560,10 @@ Explore these "what if" scenarios:
 # Do stuff here
 ```
 
-::: {.callout-note title="Your turn 6 answers"}
-1. **Green Star jumps from ≈1.9% to 9.6%---a big proportional gain, but it still can't match Value Pack (47.1%) despite being equally cheap.** The electric penalty is so severe that even at the lowest price point, Green Star falls far short of the gas competition. Value Pack takes the biggest absolute hit (4 percentage points) since it's the only other \$30,000 option.
-2. **Eco Basic's share *falls* from ≈22.7% to 12.5% (ooof).** In this dataset, electric is strongly dispreferred vs. hybrid (WTP difference ≈ -\$4,100), so switching Eco Basic to electric is a self-inflicted wound. Value Pack absorbs most of the defectors (+7 percentage points to 57.8%), since consumers fleeing a bad electric product gravitate toward the cheapest available gas option.
-3. **Ultra Green ends up with the same specs and price as Green Star, so they split shares exactly equally: 1.82% each.** Under IIA, the new entrant steals proportionally from *every* competitor---Value Pack loses the most in absolute terms (-0.9 percentage points) simply because it has the biggest share. In reality you'd expect a clone to steal almost exclusively from its twin, not from a product with totally different attributes.
-:::
-
-```{r}
-#| label: your-turn-6-answers
-#| code-fold: true
-
-# Helper function for simulating shares
-simulate_shares <- function(market_df, model) {
-  market_df <- market_df |>
-    mutate(
-      choice_id = 1, # mclogit() needs this
-      seat = factor(seat, levels = c("6", "7", "8")),
-      cargo = factor(cargo, levels = c("2ft", "3ft")),
-      eng = factor(eng, levels = c("gas", "elec", "hyb")),
-      price = factor(price, levels = c("30", "35", "40"))
-    )
-
-  predictions(
-    model,
-    newdata = market_df,
-    type = "link"
-  ) |>
-    as_tibble() |>
-    select(product, seat, cargo, eng, price, utility = estimate) |>
-    mutate(market_share = exp(utility) / sum(exp(utility)))
-}
-
-# 1. Green Star price cut
-market1 <- tribble(
-  ~product     , ~seat , ~cargo , ~eng   , ~price ,
-  "Eco Basic"  , "6"   , "2ft"  , "hyb"  , "30"   ,
-  "Family Max" , "8"   , "3ft"  , "gas"  , "35"   ,
-  "Green Star" , "7"   , "3ft"  , "elec" , "30"   ,
-  "Value Pack" , "6"   , "2ft"  , "gas"  , "30"
-)
-
-simulate_shares(market1, model_multinomial)
-
-# 2. Eco Basic engine upgrade: Hybrid → Electric
-market2 <- tribble(
-  ~product     , ~seat , ~cargo , ~eng   , ~price ,
-  "Eco Basic"  , "6"   , "2ft"  , "elec" , "30"   ,
-  "Family Max" , "8"   , "3ft"  , "gas"  , "35"   ,
-  "Green Star" , "7"   , "3ft"  , "elec" , "40"   ,
-  "Value Pack" , "6"   , "2ft"  , "gas"  , "30"
-)
-
-simulate_shares(market2, model_multinomial)
-
-# 3. New entrant: Ultra Green (electric 7-seater, 3ft cargo, $40K)
-market3 <- tribble(
-  ~product      , ~seat , ~cargo , ~eng   , ~price ,
-  "Eco Basic"   , "6"   , "2ft"  , "hyb"  , "30"   ,
-  "Family Max"  , "8"   , "3ft"  , "gas"  , "35"   ,
-  "Green Star"  , "7"   , "3ft"  , "elec" , "40"   ,
-  "Value Pack"  , "6"   , "2ft"  , "gas"  , "30"   ,
-  "Ultra Green" , "7"   , "3ft"  , "elec" , "40"
-)
-
-simulate_shares(market3, model_multinomial)
-```
-
 ## Reflection questions
 
 1. The part-worth utility model assumes that total product utility is just the *sum* of the individual part-worths: $U(\text{product}) = \beta_\text{engine} + \beta_\text{seating} + \beta_\text{cargo} + \beta_\text{price}$. When might this additive model give misleading results?
 
-::: {.callout-note title="Answer"}
-The additive model fails when attribute levels complement or substitute each other in nonlinear ways, like when there are interactions between attributes. For example, a consumer with a big family might simultaneously want 8 seats *and* 3 feet of cargo space and would get extra bonus utility when combining the two attributes.
-
-Price and engine type might also interact: environmentally conscious people who prefer electric engines may also be more price-tolerant (less elastic, in econ terms) for that feature, while gas-preferring buyers might be highly price-sensitive (more elastic). A model without an `eng × price` interaction would miss this.
-
-When you suspect interactions, you can add specific interaction terms grounded in theory. Adding all possible pairwise interactions is rarely practical (and risks overfitting), so the usual approach is to test only the interactions that theory predicts. Alternatively, random-coefficients (mixed) logit---coming up next!---implicitly allows individuals to have different utility trade-offs, which can absorb some interaction-like patterns.
-:::
-
 2. The WTP estimates we calculated came from a *hypothetical* conjoint experiment---respondents said what they would choose, but didn't actually spend any money. Why might the WTP for cargo space (+\$2,750) or engine type might not predict what actual minivan buyers would pay in the real market. What could you do to partially address that?
 
-::: {.callout-note title="Answer"}
-**Hypothetical bias:** In a survey, respondents face no real budget constraint. Saying "yes, I'd pay \$2,750 more for extra cargo" costs nothing. In an actual transaction, that money comes out of a real budget and competes with other purchases. Stated WTP from surveys routinely exceeds revealed WTP from actual purchases---sometimes by 2--3×. Researchers can partially address this by including real financial incentives (e.g., an incentive-compatible auction where one randomly chosen respondent's stated WTP becomes a binding purchase price), or by calibrating conjoint WTP against observed market prices for similar products. 
-
-In some academic research, participants get actual money---in an ongoing project by one of my colleagues, they gave all participants \$100 and asked them to donate some proportion to a charity from among a list of organizations with varying characteristics, and the amounts given are fairly low
-
-**Attribute omission:** The conjoint only included four attributes. Real minivan purchases depend on many unmeasured factors---brand reputation, warranty terms, fuel costs over time, dealership experience, peer recommendations, test drives, etc.. If cargo space is correlated in the real market with other desirable features (e.g., cargo-focused models also tend to have better towing capacity), the WTP estimate for cargo partially reflects preferences for those unmeasured features too. More comprehensive designs that include more attributes, and supplementary validation against actual sales data, can help bound how much this matters.
-:::
-
 3. All these quantities we calculated today---part-worth utilities, importance scores, WTP, market shares---are *population averages* that describe a "typical" consumer. But real preference heterogeneity matters: some households desperately need 8 seats, others want maximum fuel efficiency, and so on. Describe specifically how ignoring this heterogeneity can be misleading.
-
-::: {.callout-note title="Answer"}
-Suppose the average WTP for electric vs. gas is -\$8,800, but the distribution is bimodal---20% of consumers would pay a \$5,000 premium for electric, and 80% require at least a \$12,000 discount to consider it. Using the average WTP to set prices would serve neither segment well. A car maker pricing the electric model at the "average indifference point" would leave money on the table with enthusiasts and still fail to attract reluctant buyers. Knowing the *distribution* of WTP (its variance and shape, not just its mean) lets you reason about pricing strategy for specific target segments.
-
-Hierarchical Bayesian analysis addresses this by giving us individual-level utility estimation and complete posterior distributions of parameters. That's up next!
-:::
