@@ -9,6 +9,7 @@
 *.html
 misc/tikz-cache
 market-simulator-app/*.rds
+*_cache/
 
 **/*.quarto_ipynb
 

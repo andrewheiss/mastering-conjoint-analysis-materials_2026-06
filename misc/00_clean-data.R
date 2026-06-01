@@ -58,9 +58,10 @@ tkr <- tkr_raw |>
     ),
     resp_party = case_when(
       democrat_respondent == 1 ~ "Democrat",
-      republican_respondent == 1 ~ "Republican"
+      republican_respondent == 1 ~ "Republican",
+      .default = "Independent"
     ) |>
-      factor(levels = c("Democrat", "Republican")),
+      factor(levels = c("Democrat", "Republican", "Independent")),
     # Globally unique task ID: respondent × contest pair
     task_id = paste0(responseid, "_", contest)
   ) |>

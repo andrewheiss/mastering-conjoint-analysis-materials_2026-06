@@ -1,6 +1,6 @@
 ---
 title: "Causal inference with conjoint data"
-subtitle: "Day 3, part 1 --- Exercise"
+subtitle: "Day 2, part 1 --- Exercise"
 bibliography: references.json
 toc: true
 ---
@@ -64,7 +64,11 @@ options(
 
 # From the Urban Institute bc why not
 # https://urbaninstitute.github.io/graphics-styleguide/#color
-party_colors <- c("Democrat" = "#1696d2", "Republican" = "#db2b27")
+party_colors <- c(
+  "Democrat" = "#1696d2", 
+  "Republican" = "#db2b27", 
+  "Independent" = "#fdbf11"
+)
 
 # Little helper function for formatting numbers as percentage points
 label_pp <- scales::label_number(
@@ -333,8 +337,7 @@ ggplot(mm_all, aes(x = estimate, y = level_nice)) +
   scale_x_continuous(labels = label_percent()) +
   labs(
     x = "Marginal mean",
-    y = NULL,
-    title = "Marginal means for all candidate attributes"
+    y = NULL
   ) +
   facet_wrap(vars(attribute_nice), scales = "free_y", ncol = 2)
 ```
