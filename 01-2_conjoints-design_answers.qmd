@@ -1,0 +1,330 @@
+---
+title: "Conjoint design"
+subtitle: "Day 1, part 2 --- Answers"
+bibliography: references.json
+toc: true
+---
+
+## Overview
+
+The {cbcTools} package provides a complete workflow for designing, building, simulating, and evaluating conjoint experimental designs (and it plugs right into {surveydown} so you can field the exact survey that you make with it!)
+
+Throughout this exercise we'll use our ice cream example from the survey you took earlier. The attributes and levels are:
+
+| Attribute | Levels                         |
+|:----------|:-------------------------------|
+| Flavor    | Chocolate, vanilla, strawberry |
+| Container | Bowl, cone                     |
+| Toppings  | None, nuts, sprinkles          |
+| Price     | \$3, \$4, \$5                  |
+
+## The overall workflow
+
+{cbcTools} provides six functions to help design and evaluation surveys:
+
+1. **`cbc_profiles()`**: Define attributes and levels
+2. **`cbc_priors()`**: Optionally specify preference assumptions
+3. **`cbc_design()`**: Create choice question design
+4. **`cbc_inspect()`**: Evaluate the quality of the design
+5. **`cbc_choices()`**: Simulate realistic choice data to test your models and check power
+6. **`cbc_power()`**: Determine sample size requirements
+
+## Step 1: Generate profiles
+
+A profile is one specific combination of attribute levels, or in this case, one hypothetical ice cream option. Before we can design a survey, we need to list out all possible profiles. This is the "universe" from which our survey questions will draw.
+
+```{r}
+#| label: libraries-data
+#| warning: false
+#| message: false
+
+library(tidyverse)
+library(cbcTools)
+```
+
+```{r}
+profiles <- cbc_profiles(
+  flavor = c("Chocolate", "Vanilla", "Strawberry"),
+  container = c("Bowl", "Cone"),
+  toppings = c("None", "Nuts", "Sprinkles"),
+  price = c(3, 4, 5)
+)
+
+profiles
+```
+::: {.callout-tip title="Your turn 1"}
+Use your intuition, along with code you just ran above, to answer these questions:
+
+1. Why are there 54 profiles?
+2. In the earlier candy example, we used a full factorial design where every respondent saw all 8 profiles simultaneously. Why is a full factorial design impossible here? What might we do instead?
+:::
+
+::: {.callout-note title="Your turn 1 answers"}
+1. 3 flavors × 2 containers × 3 toppings × 3 prices = 54. Each profile is one unique combination of all attribute levels.
+2. Showing all 54 profiles at once would be cognitively overwhelming---respondents can't meaningfully compare that many options simultaneously. Instead, we can use a fractional design where each respondent sees a small, manageable subset of profiles (here, 5 questions × 3 alternatives = 15 profiles per person). By randomizing which subset each respondent sees, we can still recover estimates across the full attribute space without overwhelming anyone.
+:::
+
+## Step 2: Specify priors
+
+Before generating the design, we can optionally tell {cbcTools} what we expect respondents to prefer. These priors do two things:
+
+1. They let us generate a *D-optimal* design---one that extracts the most information given our expected preference structure (more on this below!).
+2. They let us simulate realistic data we can use for testing and for power analysis.
+
+Priors are expressed as coefficients. For categorical attributes, all values are relative to a reference level (the first level listed in `cbc_profiles()`).
+
+```{r}
+priors <- cbc_priors(
+  profiles = profiles,
+  flavor = c(0.5, 0.3),  # Vanilla (+0.5) and Strawberry (+0.3) vs. Chocolate (ref)
+  container = 0.2,  # Cone (+0.2) vs. Bowl (ref)
+  toppings = c(0.3, 0.4),  # Nuts (+0.3) and Sprinkles (+0.4) vs. None (ref)
+  price = -0.3  # Negative because people prefer lower prices - as price goes up. preference goes down
+)
+
+priors
+```
+
+## Step 3: Generate a design
+
+Now we can generate the actual survey design, or the specific set of possible choice questions that respondents might see.
+
+Here we'll arbitrarily say that each respondent sees 5 questions with 3 alternatives each, so that they see 15 possible profiles.
+
+```{r}
+set.seed(1234)
+design <- cbc_design(
+  profiles = profiles,
+  priors = priors,
+  method = "stochastic", # D-optimal method
+  n_alts = 3, # 3 alternatives per question
+  n_q = 5, # 5 questions per respondent
+  n_resp = 300 # 300 respondents
+)
+
+design
+```
+
+↑ There we used "stochastic" as the design method, which offers completely random profiles for each respondent. There are a bunch of others though:
+
+| Method         | Description                                                                     |
+|:---------------|:--------------------------------------------------------------------------------|
+| `"random"`     | Randomly sample profiles for each question                                      |
+| `"shortcut"`   | Frequency-balanced; minimizes within-question overlap                           |
+| `"minoverlap"` | Explicitly minimizes attribute-level overlap within questions                   |
+| `"balanced"`   | Optimizes both balance and pairwise attribute interactions                      |
+| `"stochastic"` | Minimizes D-error by randomly swapping profiles (fast)                          |
+| `"modfed"`     | Minimizes D-error by exhaustively swapping all profiles (slower, more thorough) |
+| `"cea"`        | Minimizes D-error attribute-by-attribute                                        |
+
+Regardless of which one you choose, {cbcTools} claims that all of the methods ensure that there will be no duplicate profiles within any choice set, and that no respondent will have duplicate choice sets.
+
+## Step 4: Inspect the design
+
+`cbc_inspect()` gives a detailed diagnostic report covering balance, overlap, and D-error.
+
+```{r}
+cbc_inspect(design)
+```
+
+"D-error", [put simply](https://cran.r-project.org/web/packages/cbcTools/vignettes/d_error.html), is a measure of how well a design is at extracting information from respondents in a conjoint experiment. With these sets of questions and mixes of levels within attributes, we want questions that contribute as much statistical information as possible. If a pairing of profiles doesn't create enough competition (i.e. one of the levels always dominates all the time), we won't learn anything from it because respondents will always choose the same thing. D-error summarizes the total information as a single value, and it can be compared across different designs in the same experiment. **Lower values represent more efficient designs.**
+
+"Attribute balance" here measures how evenly attribute levels are distributed across the entire design. A score of 1.0 means perfect balance, where every level appears equally often. Balance matters because imbalanced designs give you more information about some levels than others. **Higher values represent more balanced designs.**
+
+"Attribute overlap" measures how often two alternatives in the same choice question share the same level on an attribute. Overlap of 0 means every alternative in every question has a unique level on every attribute. Some overlap is often unavoidable (e.g., price can only take 3 values but we have 3 alternatives), but high overlap reduces the discriminating power of a question---if two alternatives are identical on price, that question tells you nothing about price sensitivity.  **Lower values represent better, less overlapped designs.**
+
+::: {.callout-tip title="Your turn 2"}
+1. The `cbc_inspect()` output for `design` reports two D-error values: one computed with your priors and one computed under the null model. Why would you want to see both?
+2. Suppose two designs have D-errors of 0.62 and 0.71. One was generated with `n_alts = 3` and the other with `n_alts = 2`. Can you conclude that the first design is better? Why or why not?
+:::
+
+::: {.callout-note title="Your turn 2 answers"}
+1. The prior D-error (0.985) tells you how efficient the design is *if your priors are correct*. The null model D-error (0.921) tells you how efficient the design would be if preferences were completely equal across all levels. Seeing both matters because your priors could be wrong. A large gap between the two values means the design is tightly tuned to your assumptions. It can be efficient under those priors but potentially worse than a generic design if the assumptions are wrong.
+2. No. D-error is only comparable within the same design structure. Designs with different numbers of alternatives per question have D-errors on incompatible scales---more alternatives per question generates more information per task but also changes how D-error is calculated. To fairly compare two designs, everything except the generation method must be held constant.
+:::
+
+## Step 5: Simulate choices
+
+Before deploying to real respondents, we can simulate how choices would look if respondents behaved according to our priors. This is useful for debugging the design, checking that `cbc_power()` can recover the parameters, and building intuition about the model. You can even use this simulated data for something like pre-registration.
+
+```{r}
+choices <- cbc_choices(
+  design = design,
+  priors = priors
+)
+
+choices
+```
+
+The roughly equal choice rates across alternatives is a good sign---it means the design doesn't systematically favor any position. If one alternative were chosen 60% of the time, that might indicate the design frequently puts a "dominant" alternative in position 1.
+
+We can do a quick sanity check on whether the simulated choices generally reflect our priors:
+
+```{r}
+# Filter to chosen alternatives only
+chosen <- choices |> filter(choice == 1)
+
+# Lower prices should be chosen more often
+chosen |> count(price)
+
+# Vanilla and Strawberry preferred over Chocolate
+chosen |> count(flavor)
+
+# Both Nuts and Sprinkles are preferred over None
+chosen |> count(toppings)
+```
+
+::: {.callout-tip title="Your turn 3"}
+1. Make the same design with `cbc_design()` but don't include any priors. Then feed it to `cbc_choices()` and check the choice rates. Did they change? What would you expect to see in the `count()` results, and does the simulation confirm it?
+2. The simulated choices don't perfectly match the priors—Chocolate might be chosen more often than expected even though we gave Vanilla a positive prior. Why? What would happen if you simulated choices for 10,000 respondents instead of 300?
+:::
+
+```{r}
+#| label: your-turn-3
+
+# Do stuff here
+```
+
+::: {.callout-note title="Your turn 3 answers"}
+1. Without priors, choices are made randomly with no preference structure. You'd expect all attribute levels to be chosen at roughly equal rates, proportional to how often they appear in the design. The `count()` results should show near-uniform counts across levels..
+2. The mismatch comes from random sampling variability. With only 300 respondents × 5 questions = 1,500 total choices, there's substantial noise around any theoretical probability. The priors define the probability that a given profile wins a comparison, not a deterministic outcome. With 10,000 respondents the observed proportions would converge much closer to the theoretical values implied by the priors.
+:::
+
+```{r}
+#| label: your-turn-3-answers
+
+set.seed(1234)
+design_null <- cbc_design(
+  profiles = profiles,
+  method = "stochastic", # D-optimal method
+  n_alts = 3, # 3 alternatives per question
+  n_q = 5, # 5 questions per respondent
+  n_resp = 300 # 300 respondents
+)
+
+choices_null <- cbc_choices(design = design_null)
+chosen_null <- choices_null |> filter(choice == 1)
+chosen_null |> count(price)
+chosen_null |> count(flavor)
+chosen_null |> count(toppings)
+```
+
+## Step 6: Assess power
+
+Statistical power is the probability of correctly detecting an effect when it truly exists. In conjoint studies, "detecting an effect" means getting a statistically significant coefficient for an attribute—e.g., confirming that price sensitivity is real, not noise. Power depends on a bunch of things:
+
+Power depends on four things:
+
+- **Effect size**: Larger effects (stronger preferences) are easier to detect
+- **Sample size**: More respondents → smaller standard errors → higher power
+- **Design efficiency**: A more efficient design extracts more information per respondent, so it achieves higher power at smaller sample sizes
+- **Model complexity**: More parameters = more respondents required
+
+A standard target is 80% power ($\alpha = 0.05$), meaning that if the true effect exists, you will detect it 80% of the time. You'll often see 90% used as a more conservative target.
+
+`cbc_power()` takes our simulated choices and estimates a logit model at multiple increasing sample sizes. At each sample size, it records the coefficient estimates and standard errors and calculates power.
+
+```{r}
+set.seed(1234)
+power <- cbc_power(choices, n_breaks = 10)
+power
+```
+
+That's… a lot of output. Fortunately it's easy to plot!
+
+```{r}
+plot(power, type = "power", power_threshold = 0.8)
+```
+
+At lower sample sizes, it's hard to reliably detect true effects in the different attribute levels, but by the time we get to 300+, we're reliably above 80% power.
+
+We can use `summary()` to get sample size requirements for each parameter:
+
+```{r}
+summary(power, power_threshold = 0.8)
+```
+
+The binding constraint for our overall sample size is the parameter requiring the largest sample to achieve 80% power---here that's `toppingsNuts` at n ≥ 180. That's the minimum sample size we'd need. In practice, it's a good idea to recruit 10–20% more than the minimum to buffer against attrition, failed attention checks, and satisficers, so we should probably aim for around 200--210 respondents.
+
+::: {.callout-tip title="Your turn 4"}
+1. Change the `power_threshold` to 0.9. Which parameter now becomes the binding constraint? How many respondents does that imply?
+2. Suppose your budget only allows 100 respondents. Run `summary(power, power_threshold = 0.8)` and identify which parameters would *not* achieve 80% power. What would you tell a colleague who asked whether the study was sufficiently powered?
+3. Why does price achieve high power at much smaller sample sizes than `containerCone`, even though both attributes have only 2 or 3 levels? What feature of the prior specification drives this?
+:::
+
+```{r}
+#| label: your-turn-4
+
+# Do stuff here
+```
+
+::: {.callout-note title="Your turn 4 answers"}
+(lol these keep changing every time I render, no matter how many `set.seed()`s I throw in. So these answers have to be generic 🤷‍♂️)
+
+1. At 90% power, some of these attributes will likely have higher thresholds for power. Choose the maximum one + some buffer
+2. With 100 respondents, some attributes wouldn't achieve 80% power. You'd tell a colleague: the study is adequately powered for detecting strong effects (price sensitivity, some toppings or flavors maybe?) but underpowered for most others.
+3. Price achieves high power at smaller sample sizes because it has a larger effective effect size. The prior coefficient is -0.3 per dollar across a \$3–\$5 range, which is a total utility swing of -0.6 between cheapest and most expensive. `containerCone` has a prior of only 0.2. Larger true effects require smaller samples to detect reliably.
+:::
+
+```{r}
+#| label: your-turn-4-answers
+
+summary(power, power_threshold = 0.9)
+summary(power, power_threshold = 0.8)
+```
+
+{cbcTools} lets you compare power across different design methods too:
+
+```{r}
+# Simulate choices from the random design using the same priors
+set.seed(123)
+design_random <- cbc_design(
+  profiles = profiles,
+  method = "random",
+  n_alts = 3,
+  n_q = 5,
+  n_resp = 300
+)
+
+choices_random <- cbc_choices(design_random, priors = priors)
+
+# Power analysis for both designs
+set.seed(1234)
+power_optimal <- cbc_power(choices, n_breaks = 10)
+power_optimal
+
+set.seed(1234)
+power_random <- cbc_power(choices_random, n_breaks = 10)
+power_random
+
+# Compare the two power curves
+plot_compare_power(
+  Optimal = power_optimal,
+  Random = power_random,
+  type = "power",
+  power_threshold = 0.8
+)
+```
+
+The comparison shows that for most attributes, the stochastic (D-optimal) and random designs achieve similar power curves. The D-optimal design does not uniformly dominate, and the random design achieves comparable or slightly better power for some individual parameters at some sample sizes. This happens because D-error measures efficiency for the *entire parameter vector simultaneously*, not for any single coefficient. The random design also uses all 54 profiles (100% profile coverage vs. ≈25% for stochastic (again, it's not always the same because of some seed shenanigans?)), giving it more attribute-level diversity. In practice, the gains from D-optimal design tend to be modest unless your priors are accurate and preferences are highly heterogeneous.
+
+
+## Reflection questions
+
+1. A colleague proposes solving the sample size problem by adding more questions per respondent instead of recruiting more respondents. "It's basically the same data," they say. Is it? What does increasing `n_q` vs. increasing `n_resp` each do to power, and when does one become less useful than the other?
+
+::: {.callout-note title="Answer"}
+It's not quite the same. Both increase total observations, but through different mechanisms with different diminishing returns. Increasing `n_q` adds repeated observations from the same respondents, with correlated observations that share the same person's underlying preferences, so statistical returns are discounted relative to independent data. Fatigue is also real: after roughly 8–12 tasks, respondents satisfice or disengage, and adding more questions produces worse data rather than more data.
+
+Increasing `n_resp` adds independent respondents. That grows the effective sample proportionally, adds new units for estimating respondent-level heterogeneity (essential for the Bayesian hierarchical models from Day 3), and doesn't compound within-person correlation. The practical rule: use 5–8 questions per respondent to get stable within-person estimates, then recruit more respondents rather than lengthening the survey.
+:::
+
+2. We set `price` as a continuous variable with three levels. An alternative is to treat it as a categorical variable with three levels (dummy-coded). What are the tradeoffs? How would treating price as categorical change (1) the coefficient interpretation, (2) the number of parameters estimated, and (3) the power analysis?
+
+::: {.callout-note title="Answer"}
+1. Continuous price gives a single slope---a \$1 increase changes selection probability by X percentage points---which assumes a linear relationship. Categorical price gives a separate estimate for each non-reference level: \$4 vs. \$3 and \$5 vs. \$3.
+
+2. Continuous = 1 coefficient (the slope); categorical = 2 coefficients (k−1 dummies for 3 levels). Fewer parameters means more information per estimate.
+
+3. Treating price as continuous concentrates all price variation into one parameter, so power for detecting *any* price effect is higher. (Recall how price did amazing power-wise earlier.) Treating it as categorical splits that information across two coefficients. That's useful if the effect is non-linear, but at a power cost. With only 3 price levels it's hard to distinguish linear from non-linear effects, so continuous is usually preferred.
+:::
