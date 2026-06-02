@@ -1,6 +1,6 @@
 ---
 title: "Causal inference with conjoint data"
-subtitle: "Day 2, part 1 --- Exercise"
+subtitle: "Day 2, part 1 --- Answers"
 bibliography: references.json
 toc: true
 ---

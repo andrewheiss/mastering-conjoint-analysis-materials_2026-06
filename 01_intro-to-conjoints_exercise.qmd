@@ -1,6 +1,6 @@
 ---
 title: "Introduction to conjoint analysis"
-subtitle: "Day 1 --- Exercise"
+subtitle: "Day 1, part 1 --- Exercise"
 bibliography: references.json
 toc: true
 ---

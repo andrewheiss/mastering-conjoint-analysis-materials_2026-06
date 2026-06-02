@@ -1,6 +1,6 @@
 ---
 title: "Preference measurement with conjoint data"
-subtitle: "Day 3 --- Exercise"
+subtitle: "Day 3 --- Answers"
 bibliography: references.json
 toc: true
 ---
