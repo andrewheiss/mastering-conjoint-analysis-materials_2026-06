@@ -52,6 +52,7 @@ profiles <- cbc_profiles(
 
 profiles
 ```
+
 ::: {.callout-tip title="Your turn 1"}
 Use your intuition, along with code you just ran above, to answer these questions:
 
@@ -176,7 +177,7 @@ chosen |> count(toppings)
 
 ::: {.callout-tip title="Your turn 3"}
 1. Make the same design with `cbc_design()` but don't include any priors. Then feed it to `cbc_choices()` and check the choice rates. Did they change? What would you expect to see in the `count()` results, and does the simulation confirm it?
-2. The simulated choices don't perfectly match the priors—Chocolate might be chosen more often than expected even though we gave Vanilla a positive prior. Why? What would happen if you simulated choices for 10,000 respondents instead of 300?
+2. The simulated choices don't perfectly match the priors---Chocolate might be chosen more often than expected even though we gave Vanilla a positive prior. Why? What would happen if you simulated choices for 10,000 respondents instead of 300?
 :::
 
 ```{r}
@@ -211,7 +212,7 @@ chosen_null |> count(toppings)
 
 ## Step 6: Assess power
 
-Statistical power is the probability of correctly detecting an effect when it truly exists. In conjoint studies, "detecting an effect" means getting a statistically significant coefficient for an attribute—e.g., confirming that price sensitivity is real, not noise. Power depends on a bunch of things:
+Statistical power is the probability of correctly detecting an effect when it truly exists. In conjoint studies, "detecting an effect" means getting a statistically significant coefficient for an attribute---e.g., confirming that price sensitivity is real, not noise. Power depends on a bunch of things:
 
 Power depends on four things:
 
@@ -244,7 +245,7 @@ We can use `summary()` to get sample size requirements for each parameter:
 summary(power, power_threshold = 0.8)
 ```
 
-The binding constraint for our overall sample size is the parameter requiring the largest sample to achieve 80% power---here that's `toppingsNuts` at n ≥ 180. That's the minimum sample size we'd need. In practice, it's a good idea to recruit 10–20% more than the minimum to buffer against attrition, failed attention checks, and satisficers, so we should probably aim for around 200--210 respondents.
+The binding constraint for our overall sample size is the parameter requiring the largest sample to achieve 80% power---here that's `toppingsNuts` at n ≥ 180. That's the minimum sample size we'd need. In practice, it's a good idea to recruit 10--20% more than the minimum to buffer against attrition, failed attention checks, and satisficers, so we should probably aim for around 200--210 respondents.
 
 ::: {.callout-tip title="Your turn 4"}
 1. Change the `power_threshold` to 0.9. Which parameter now becomes the binding constraint? How many respondents does that imply?
@@ -263,7 +264,7 @@ The binding constraint for our overall sample size is the parameter requiring th
 
 1. At 90% power, some of these attributes will likely have higher thresholds for power. Choose the maximum one + some buffer
 2. With 100 respondents, some attributes wouldn't achieve 80% power. You'd tell a colleague: the study is adequately powered for detecting strong effects (price sensitivity, some toppings or flavors maybe?) but underpowered for most others.
-3. Price achieves high power at smaller sample sizes because it has a larger effective effect size. The prior coefficient is -0.3 per dollar across a \$3–\$5 range, which is a total utility swing of -0.6 between cheapest and most expensive. `containerCone` has a prior of only 0.2. Larger true effects require smaller samples to detect reliably.
+3. Price achieves high power at smaller sample sizes because it has a larger effective effect size. The prior coefficient is -0.3 per dollar across a \$3--\$5 range, which is a total utility swing of -0.6 between cheapest and most expensive. `containerCone` has a prior of only 0.2. Larger true effects require smaller samples to detect reliably.
 :::
 
 ```{r}
@@ -314,9 +315,9 @@ The comparison shows that for most attributes, the stochastic (D-optimal) and ra
 1. A colleague proposes solving the sample size problem by adding more questions per respondent instead of recruiting more respondents. "It's basically the same data," they say. Is it? What does increasing `n_q` vs. increasing `n_resp` each do to power, and when does one become less useful than the other?
 
 ::: {.callout-note title="Answer"}
-It's not quite the same. Both increase total observations, but through different mechanisms with different diminishing returns. Increasing `n_q` adds repeated observations from the same respondents, with correlated observations that share the same person's underlying preferences, so statistical returns are discounted relative to independent data. Fatigue is also real: after roughly 8–12 tasks, respondents satisfice or disengage, and adding more questions produces worse data rather than more data.
+It's not quite the same. Both increase total observations, but through different mechanisms with different diminishing returns. Increasing `n_q` adds repeated observations from the same respondents, with correlated observations that share the same person's underlying preferences, so statistical returns are discounted relative to independent data. Fatigue can also be a concern: after too many tasks, respondent can start to satisfice or disengage, and adding more questions might produce worse data rather than more data.
 
-Increasing `n_resp` adds independent respondents. That grows the effective sample proportionally, adds new units for estimating respondent-level heterogeneity (essential for the Bayesian hierarchical models from Day 3), and doesn't compound within-person correlation. The practical rule: use 5–8 questions per respondent to get stable within-person estimates, then recruit more respondents rather than lengthening the survey.
+Increasing `n_resp` adds independent respondents. That grows the effective sample proportionally, adds new units for estimating respondent-level heterogeneity (essential for the Bayesian hierarchical models from Day 3), and doesn't compound within-person correlation.
 :::
 
 2. We set `price` as a continuous variable with three levels. An alternative is to treat it as a categorical variable with three levels (dummy-coded). What are the tradeoffs? How would treating price as categorical change (1) the coefficient interpretation, (2) the number of parameters estimated, and (3) the power analysis?

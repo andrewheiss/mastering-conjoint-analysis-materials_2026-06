@@ -564,7 +564,7 @@ amces_gender_party |>
   scale_x_continuous(labels = label_pp) +
   scale_fill_manual(values = party_colors, guide = "none") +
   labs(
-    x = "AMCE (Female−Male)",
+    x = "AMCE (Female-Male)",
     y = "Respondent party",
     title = "Posterior conditional AMCEs for candidate gender"
   )
@@ -611,7 +611,7 @@ amces_gender_party_gender |>
   scale_fill_manual(values = party_colors, guide = "none") +
   facet_wrap(vars(resp_gender)) +
   labs(
-    x = "AMCE (Female−Male)",
+    x = "AMCE (Female-Male)",
     y = "Respondent party",
     title = "Posterior conditional AMCEs for candidate gender"
   )

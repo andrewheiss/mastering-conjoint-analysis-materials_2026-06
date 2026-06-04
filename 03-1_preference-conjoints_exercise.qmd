@@ -16,7 +16,7 @@ We'll be more like marketers and look at things like:
 - **Willingness to pay:** How much would consumers trade in dollars for a change in a feature?
 - **Market simulations:** If we launch this product, how many consumers would choose it over competitors?
 
-Notice how I talked about "products" in all of those points ↑. That because these quantities were created for marketing and business decisions. But you don't have to think of products---you can do all this stuff with candidates, organizations, or whatever else your profiles represent. For instance, in @ChaudhryDotsonHeiss2021, we used market simulations with hypothetical NGO profiles.
+Notice how I talked about "products" in all of those points ↑. That's because these quantities were created for marketing and business decisions. But you don't have to think of products---you can do all this stuff with candidates, organizations, or whatever else your profiles represent. For instance, in @ChaudhryDotsonHeiss2021, we used market simulations with hypothetical NGO profiles.
 
 ::: {.callout-tip title="Same model, different questions"}
 All these quantities still use the same underlying model as the causal approach---a logistic regression on choice outcomes (we'll avoid OLS-based linear probability models now). The difference is what quantities we extract and how we interpret them.
@@ -325,10 +325,6 @@ Since these centered part-worth utilities are on the same scale, we can visualiz
 
 ```{r}
 #| label: fig-utilities
-#| fig-width: 10
-#| fig-height: 7
-#| fig-cap: Part-worth utilities for minivan attributes, zero-centered within each attribute. Bars show 95% confidence intervals.
-#| code-fold: true
 
 ggplot(utilities, aes(x = estimate, y = fct_reorder(level_nice, estimate))) +
   geom_col(aes(fill = estimate > 0), width = 0.6) +
@@ -349,10 +345,6 @@ We can also view all levels together in a single ranked plot to see which specif
 
 ```{r}
 #| label: fig-utility-profile
-#| fig-width: 10
-#| fig-height: 6
-#| fig-cap: Utility profile chart showing all attribute levels ranked by centered utility. Colors distinguish attributes.
-#| code-fold: true
 
 utilities |>
   mutate(label = paste0(attribute_nice, ": ", level_nice)) |>
@@ -529,9 +521,7 @@ That's neat! The fourth car there (all base levels, cheapest) dominates at 51%, 
 
 ```{r}
 #| label: fig-market-shares
-#| fig-width: 7
-#| fig-height: 4
-#| fig-cap: Simulated market shares for four hypothetical minivans.
+
 market_shares |>
   mutate(
     product_nice = str_glue(

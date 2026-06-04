@@ -472,7 +472,7 @@ avg_comparisons(
 Interpreting these things is tricky, since log odds are generally pretty unintuitive. You can look for a couple things with them:
 
 - **Sign**: positive = preferred over the reference level, negative = dispreferred.
-- **Relative magnitude across attributes**: a coefficient of −2.6 for `soft` vs. 1.8 for `dark` means that that aversion to a soft center is a stronger driver of choice than preference for dark chocolate
+- **Relative magnitude across attributes**: a coefficient of -2.6 for `soft` vs. 1.8 for `dark` means that that aversion to a soft center is a stronger driver of choice than preference for dark chocolate
 
 In practice, we don't typically report raw log odds-scale part-worth utilities. Instead, these values serve as inputs to other estimands that are more interpetable.
 
