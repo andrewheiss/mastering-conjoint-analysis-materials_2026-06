@@ -1,0 +1,509 @@
+---
+title: "Preference measurement with conjoint data"
+subtitle: "Day 3 --- Answers"
+bibliography: references.json
+toc: true
+---
+
+In Part 1 we used a frequentist conditional logit model to estimate marketing-style estimands like part-worth utilities, relative attribute importance, willingness to pay, and market shares. In this part we'll re-estimate those same quantities using a hierarchical Bayesian (HB) multinomial logit model, which is the industry standard approach for preference-focused conjoint analysis.
+
+HB gives us three things the frequentist model cannot:
+
+1. **Full posterior distributions on every quantity**, not just point estimates with standard errors. We get to make direct probability statements like "there is a 94% chance that the WTP for extra cargo space is positive" rather than relying on p-values.
+2. **Individual-level utilities**: because the model partially pools information across respondents, we can estimate a separate utility vector for each person. 
+3. **Properly propagated uncertainty in market simulations**: the market share forecasts for different product offerings can come with credible intervals
+
+### Data and setup
+
+```{r}
+#| label: load-libraries-data
+#| warning: false
+#| message: false
+
+library(tidyverse)
+library(brms)
+library(tidybayes)
+library(patchwork)
+library(scales)
+library(marginaleffects)
+library(parameters)
+library(mclogit)
+
+options(
+  parameters_cimethod = FALSE,
+  parameters_exponentiate = FALSE,
+  width = 120
+)
+
+clrs <- MetBrewer::met.brewer("Tiepolo")
+
+attributes_levels <- tribble(
+  ~attribute, ~attribute_nice, ~level,
+  "seat", "Seating", c("6", "7", "8"),
+  "cargo", "Cargo", c("2ft", "3ft"),
+  "eng", "Engine", c("gas", "elec", "hyb"),
+  "price", "Price", c("30", "35", "40")
+)
+
+attribute_lookup <- attributes_levels |>
+  select(-level) |>
+  mutate(attribute_nice = fct_inorder(attribute_nice))
+
+attribute_levels_lookup <- attributes_levels |>
+  unnest(level) |>
+  mutate(level_nice = level) |>
+  mutate(across(c("attribute_nice", "level_nice"), \(x) fct_inorder(x)))
+
+minivans <- read_csv("data/rintro-chapter13conjoint.csv") |>
+  rename(resp_id = resp.id) |>
+  mutate(choice_id = cur_group_id(), .by = c(resp_id, ques)) |>
+  mutate(
+    seat = factor(seat, levels = c("6", "7", "8")),
+    cargo = factor(cargo, levels = c("2ft", "3ft")),
+    eng = factor(eng, levels = c("gas", "elec", "hyb")),
+    price = factor(price, levels = c("30", "35", "40")),
+    price_num = as.numeric(as.character(price)),
+    carpool = (carpool == "yes")
+  )
+```
+
+We'll also re-run the frequentist models from Part 1 to have for comparison:
+
+```{r}
+#| label: freq-models
+
+model_multinomial <- mclogit(
+  choice | choice_id ~ seat + cargo + eng + price,
+  data = minivans
+)
+
+model_wtp <- mclogit(
+  choice | choice_id ~ seat + cargo + eng + price_num,
+  data = minivans
+)
+```
+
+## Hierarchical Bayes
+
+All the principles we talked about on Day 2 with random effects offsets and multilevel models applies here too---HB is basically the same thing.
+
+```{r}
+#| label: fit-hb
+
+model_brms <- brm(
+  choice ~ seat + cargo + eng + price + (1 | resp_id),
+  data = minivans,
+  family = bernoulli(),
+  prior = c(
+    prior(normal(0, 3), class = b),
+    prior(exponential(1), class = sd)
+  ),
+  chains = 4, cores = 4, iter = 2000, seed = 1234,
+  backend = "cmdstanr", threads = threading(2),
+  file = "models/model_brms_minivan"
+)
+```
+
+```{r}
+model_parameters(model_brms)
+```
+
+```{r}
+model_parameters(model_multinomial)
+```
+
+## Part-worth utilities (Bayesian style)
+
+In Part 1 we found centered part-worth utilities by computing the average log-odds prediction at each attribute level across a balanced reference grid, then subtracting the within-attribute mean. With {brms} and {tidybayes} we can do the same thing.
+
+### Posterior predictions across a balanced grid
+
+```{r}
+# Create all possible combinations of attributes
+newdata_all_combos <- minivans |> 
+  tidyr::expand(seat, cargo, eng, price) |> 
+  mutate(resp_id = NA)
+
+# With the candidate experiment, we used epred_draws() to get probability scale 
+# values. Here we use linpred_draws() to get log odds-scale values. 
+# The difference between epreds and linpreds is more complex and subtle too---
+# see this blog post by me for more details: 
+# https://www.andrewheiss.com/blog/2022/09/26/guide-visualizing-types-posteriors/
+log_preds_draws <- model_brms |> 
+  linpred_draws(newdata = newdata_all_combos, allow_new_levels = TRUE)
+```
+
+### Center and summarize
+
+For each attribute, we average over the other attributes (marginalizing), then subtract the within-attribute mean so that the value is centered. Here's what that looks like with one attribute:
+
+```{r}
+#| label: seat-utility-alone
+#| warning: false
+#| message: false
+
+log_preds_draws |>
+  group_by(seat, .draw) |>
+  summarize(mean_logit = mean(.linpred)) |>
+  group_by(.draw) |>
+  mutate(
+    att_avg = mean(mean_logit),
+    utility = mean_logit - att_avg
+  ) |>
+  ungroup() |>
+  select(seat, .draw, utility) |> 
+  group_by(seat) |> 
+  median_qi()
+```
+
+We can turn this into a function to get all the posterior utilities with some more {purrr} magic:
+
+```{r}
+#| label: posterior-utilities
+
+get_posterior_utilities <- function(att) {
+  log_preds_draws |>
+    rename(level = all_of(att)) |>
+    group_by(level, .draw) |>
+    summarize(mean_logit = mean(.linpred), .groups = "drop_last") |>
+    group_by(.draw) |>
+    mutate(
+      att_avg = mean(mean_logit),
+      utility = mean_logit - att_avg
+    ) |>
+    ungroup() |>
+    select(level, .draw, utility)
+}
+
+# Calculate for all four attributes
+posterior_utilities <- attribute_lookup |>
+  mutate(draws = map(attribute, get_posterior_utilities)) |>
+  unnest(draws) |>
+  left_join(attribute_levels_lookup, by = join_by(attribute, attribute_nice, level))
+
+posterior_utilities |>
+  group_by(attribute, attribute_nice, level, level_nice) |>
+  median_qi(utility)
+```
+
+### Visualizing posterior utilities
+
+```{r}
+#| label: fig-utilities-posterior
+
+posterior_utilities |>
+  ggplot(aes(x = utility, y = fct_reorder(level_nice, utility))) +
+  stat_halfeye(aes(fill = after_stat(x) > 0)) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  facet_wrap(vars(attribute_nice), scales = "free_y", ncol = 2) +
+  scale_fill_manual(values = c("FALSE" = clrs[1], "TRUE" = clrs[8]), guide = "none") +
+  labs(
+    x = "Part-worth utility (zero-centered within attribute)",
+    y = NULL
+  )
+```
+
+## Relative attribute importance (Bayesian style)
+
+We compute relative importance the same way as in Part 1: it's the range (max - min) of centered utilities within each attribute, expressed as a share of the total range across all attributes---but now we do it for *every posterior draw*, giving us a full posterior distribution of importance scores:
+
+```{r}
+#| label: posterior-importance
+
+importance_posterior <- posterior_utilities |>
+  group_by(attribute_nice, .draw) |>
+  summarize(range = diff(range(utility)), .groups = "drop") |>
+  group_by(.draw) |>
+  mutate(importance_pct = range / sum(range)) |>
+  ungroup()
+
+importance_summary <- importance_posterior |>
+  group_by(attribute_nice) |>
+  median_qi(importance_pct) |>
+  arrange(desc(importance_pct))
+
+importance_summary
+```
+
+```{r}
+#| label: fig-importance-posterior
+
+importance_posterior |>
+  mutate(attribute_nice = fct_reorder(attribute_nice, importance_pct)) |>
+  ggplot(aes(x = importance_pct, y = attribute_nice)) +
+  # stat_halfeye() +
+  stat_ccdfinterval(aes(fill = attribute_nice)) +
+  # stat_ccdfinterval(aes(fill = attribute_nice, slab_alpha = after_stat(f)),
+  #   thickness = 1, fill_type = "gradient"
+  # ) +
+  scale_x_continuous(labels = label_percent()) +
+  scale_fill_manual(values = clrs[c(1, 3, 5, 7)], guide = "none") +
+  labs(x = "Relative importance", y = NULL)
+```
+
+```{r}
+# Probability Engine is the #1 attribute
+importance_posterior |>
+  group_by(.draw) |>
+  slice_max(importance_pct, n = 1, with_ties = FALSE) |>
+  ungroup() |>
+  summarize(prob_engine_top = mean(attribute_nice == "Engine"))
+
+# Probability Price > Engine
+importance_posterior |>
+  select(attribute_nice, .draw, importance_pct) |>
+  pivot_wider(names_from = attribute_nice, values_from = importance_pct) |>
+  summarize(prob_price_gt_engine = mean(Price > Engine))
+
+# Probability Cargo > Seating
+importance_posterior |>
+  select(attribute_nice, .draw, importance_pct) |>
+  pivot_wider(names_from = attribute_nice, values_from = importance_pct) |>
+  summarize(prob_cargo_gt_seating = mean(Cargo > Seating))
+```
+
+## Willingness to pay (Bayesian style)
+
+For WTP we need a model with numeric price. We'll fit the same model as before but with `price_num` instead of categorical `price`:
+
+```{r}
+#| label: fit-brms-wtp
+
+model_brms_wtp <- brm(
+  choice ~ seat + cargo + eng + price_num + (1 | resp_id),
+  data = minivans,
+  family = bernoulli(),
+  prior = c(
+    prior(normal(0, 3), class = b),
+    prior(exponential(1), class = sd)
+  ),
+  chains = 4, cores = 4, iter = 2000, seed = 5678,
+  backend = "cmdstanr", threads = threading(2),
+  file = "models/model_brms_minivan_wtp"
+)
+```
+
+```{r}
+#| label: wtp-posterior
+
+wtp_draws <- model_brms_wtp |>
+  spread_draws(b_seat7, b_seat8, b_cargo3ft, b_enghyb, b_engelec, b_price_num) |>
+  mutate(
+    wtp_7seats = -b_seat7  / b_price_num * 1000,
+    wtp_8seats = -b_seat8  / b_price_num * 1000,
+    wtp_cargo  = -b_cargo3ft / b_price_num * 1000,
+    wtp_hybrid = -b_enghyb / b_price_num * 1000,
+    wtp_elec   = -b_engelec / b_price_num * 1000
+  )
+
+wtp_draws |>
+  select(starts_with("wtp_")) |>
+  pivot_longer(everything(), names_to = "comparison", values_to = "wtp") |>
+  group_by(comparison) |>
+  median_qi(wtp)
+```
+
+## Market simulation (Bayesian style)
+
+In Part 1 we computed a single point-estimate market share for each product. Now we can carry the full posterior uncertainty through the simulation, giving us credible intervals on market shares.
+
+### Define the market
+
+```{r}
+#| label: market
+
+market <- tribble(
+  ~product     , ~seat , ~cargo , ~eng   , ~price ,
+  "Eco Basic"  , "6"   , "2ft"  , "hyb"  , "30"   ,
+  "Family Max" , "8"   , "3ft"  , "gas"  , "35"   ,
+  "Green Star" , "7"   , "3ft"  , "elec" , "40"   ,
+  "Value Pack" , "6"   , "2ft"  , "gas"  , "30"
+) |>
+  mutate(
+    choice_id = 1,
+    seat  = factor(seat,  levels = c("6", "7", "8")),
+    cargo = factor(cargo, levels = c("2ft", "3ft")),
+    eng   = factor(eng,   levels = c("gas", "elec", "hyb")),
+    price = factor(price, levels = c("30", "35", "40"))
+  )
+```
+
+### Posterior market shares
+
+We'll compute market shares for every posterior draw, then summarize:
+
+```{r}
+#| label: posterior-market-shares
+
+market_shares_draws <- model_brms |>
+  linpred_draws(newdata = market, allow_new_levels = TRUE) |>
+  # For each draw, apply the softmax: share_i = exp(u_i) / sum(exp(u_j))
+  group_by(.draw) |>
+  mutate(market_share = exp(.linpred) / sum(exp(.linpred))) |>
+  ungroup()
+
+market_shares_summary <- market_shares_draws |>
+  group_by(product) |>
+  median_qi(market_share) |>
+  arrange(desc(market_share))
+
+market_shares_summary
+```
+
+```{r}
+#| label: fig-market-shares-posterior
+
+market_shares_draws |>
+  mutate(product = fct_reorder(product, market_share)) |>
+  ggplot(aes(x = market_share, y = product, fill = product)) +
+  stat_halfeye() +
+  scale_x_continuous(labels = label_percent(), limits = c(0, NA)) +
+  scale_fill_manual(values = clrs[c(1, 3, 5, 7)], guide = "none") +
+  labs(x = "Market share", y = NULL)
+```
+
+## Individual-level utilities
+
+The biggest advantage of the hierarchical Bayesian approach over frequentist conditional logit is that we can extract the posterior distribution of preferences for each respondent. This is what commercial conjoint tools do when they say "this respondent is a price-sensitive buyer" or "this segment of the market loves cargo space."
+
+To get truly individual-level attribute preferences, we need random intercepts and slopes for each feature, similar to the mega model from Day 2. This hierarchical/multilevel model is essentially what platforms like Sawtooth, OpinionX, Qualtrics, and others estimate.
+
+::: {.callout-warning title="This is (only kind of) slow!"}
+This model took roughly 1.5 minutes to fit on my M5 MacBook Pro. The `file =` argument saves the fitted model so it reloads automatically on future runs rather than refitting.
+:::
+
+```{r}
+#| label: fit-brms
+
+model_brms_hb <- brm(
+  bf(choice ~ seat + cargo + eng + price +
+    (1 + seat + cargo + eng + price | resp_id)),
+  data = minivans,
+  family = bernoulli(),
+  prior = c(
+    prior(normal(0, 3), class = b),
+    prior(exponential(1), class = sd)
+  ),
+  chains = 4, cores = 4, iter = 2000, seed = 1234,
+  backend = "cmdstanr", threads = threading(2),
+  file = "models/model_brms_minivan_hb"
+)
+```
+
+### Extracting individual utilities
+
+Each respondent now has their own set of attribute utilities. Their individual utility for, say, electric engines is the population-level effect plus their personal deviation from it:
+
+$$
+u_{\text{elec},j} = \underbrace{\beta_\text{engelec}}_{\text{population avg}} + \underbrace{r_{\text{engelec},j}}_{\text{person } j\text{'s deviation}}
+$$
+
+We pull both pieces with `spread_draws()` and add them together:
+
+```{r}
+#| label: individual-utilities
+
+# Population-level effects (one draw per row)
+pop_long <- model_brms_hb |>
+  spread_draws(`b_.*`, regex = TRUE) |>
+  select(.draw, starts_with("b_")) |>
+  pivot_longer(starts_with("b_"), names_to = "term", values_to = "pop_effect") |>
+  mutate(term = str_remove(term, "^b_"))
+
+# Respondent-level deviations from population
+resp_devs <- model_brms_hb |>
+  spread_draws(r_resp_id[resp_id, term])
+
+# Individual utility = population effect + respondent deviation
+indiv_utilities <- resp_devs |>
+  left_join(pop_long, by = c(".draw", "term")) |>
+  mutate(indiv_utility = r_resp_id + pop_effect)
+
+indiv_utilities |> 
+  group_by(resp_id) |> 
+  median_qi(indiv_utility)
+```
+
+```{r}
+indiv_utilities |>
+  filter(term == "engelec") |>
+  ungroup() |>
+  mutate(resp_id = fct_reorder(factor(resp_id), indiv_utility)) |>
+  ggplot(aes(x = indiv_utility, y = resp_id)) +
+  stat_pointinterval(size = 0.15, linewidth = 0.35) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_y_discrete(breaks = NULL) +
+  labs(x = "Individual utility: Electric vs. Gas (log-odds)", y = "Respondent")
+```
+
+
+## Preference heterogeneity by respondent characteristics
+
+Even without random slopes, we can examine how the carpool characteristic moderates preferences by interacting it with attribute levels. This is the Bayesian version of what we saw in the frequentist Shiny app:
+
+```{r}
+#| label: fit-brms-carpool
+#| code-fold: false
+
+model_brms_carpool <- brm(
+  choice ~ (seat + cargo + eng + price_num) * carpool + (1 | resp_id),
+  data = minivans,
+  family = bernoulli(),
+  prior = c(
+    prior(normal(0, 3), class = b),
+    prior(exponential(1), class = sd)
+  ),
+  chains = 4, cores = 4, iter = 2000, seed = 9012,
+  backend = "cmdstanr", threads = threading(2),
+  file = "models/model_brms_minivan_carpool"
+)
+```
+
+Now we can explore things like whether carpoolers and non-carpoolers have different WTP for seating capacity, all by just working with the posterior distribution:
+
+```{r}
+#| label: wtp-by-carpool
+
+# WTP for 7 seats vs. 6, separately for carpoolers and non-carpoolers
+# For non-carpoolers: -seat7 / price_num
+# For carpoolers: -(seat7 + seat7:carpoolTRUE) / (price_num + price_num:carpoolTRUE)
+wtp_carpool_draws <- model_brms_carpool |>
+  spread_draws(
+    `b_seat7`, `b_price_num`,
+    `b_seat7:carpoolTRUE`, `b_price_num:carpoolTRUE`
+  ) |>
+  mutate(
+    wtp_no_carpool = -b_seat7 / b_price_num * 1000,
+    wtp_carpool    = -(b_seat7 + `b_seat7:carpoolTRUE`) /
+                      (b_price_num + `b_price_num:carpoolTRUE`) * 1000,
+    wtp_difference = wtp_carpool - wtp_no_carpool
+  )
+
+# Medians and credible intervals
+wtp_carpool_draws |>
+  select(wtp_no_carpool, wtp_carpool, wtp_difference) |>
+  pivot_longer(everything(), names_to = "group", values_to = "wtp") |>
+  group_by(group) |>
+  median_qi(wtp)
+```
+
+```{r}
+# Probability that carpoolers are willing to pay more for 
+# 3 ft of cargo than non-carpoolers
+wtp_cargo_draws <- model_brms_carpool |>
+  spread_draws(
+    `b_cargo3ft`,
+    `b_price_num`,
+    `b_cargo3ft:carpoolTRUE`,
+    `b_price_num:carpoolTRUE`
+  ) |>
+  mutate(
+    wtp_no_carpool = -b_cargo3ft / b_price_num * 1000,
+    wtp_carpool = -(b_cargo3ft + `b_cargo3ft:carpoolTRUE`) /
+      (b_price_num + `b_price_num:carpoolTRUE`) *
+      1000,
+    wtp_difference = wtp_carpool - wtp_no_carpool
+  )
+
+mean(wtp_cargo_draws$wtp_difference > 0)
+```
