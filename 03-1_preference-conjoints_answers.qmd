@@ -738,6 +738,186 @@ market3 <- tribble(
 simulate_shares(market3, model_multinomial)
 ```
 
+## Preference heterogeneity with individual-level covariates
+
+So far all our quantities---utilities, importance, WTP, market shares---describe the average respondent. But the minivan data includes `carpool`, a respondent-level characteristic telling us whether that person regularly carpools on their commute. We might expect carpoolers to have different preferences: they regularly have more passengers, so they might value seating capacity more highly. Or they might care more about cargo because they're driving around more stuff.
+
+We can look at the influence of carpool status by interacting all the attribute covariates with `carpool`, just like we did on Day 2 with respondent-level political party and gender:
+
+```{r}
+#| label: fit-carpool-models
+#| warning: false
+
+# Factor price: for utilities, importance, and market simulation
+model_carpool <- mclogit(
+  choice | choice_id ~ (seat + cargo + eng + price) * carpool,
+  data = minivans
+)
+
+# Numeric price: needed for WTP
+model_wtp_carpool <- mclogit(
+  choice | choice_id ~ (seat + cargo + eng + price_num) * carpool,
+  data = minivans
+)
+```
+
+The interaction coefficients (e.g., `seat7:carpoolTRUE`) tell us how much a carpooler's utility for 7 seats differs from a non-carpooler's. To get the carpooler's full utility for 7 seats, we can add add `seat7 + seat7:carpoolTRUE`. But *once again*, working with these raw coefficients is the worst, and we'll let {marginaleffects} handle it for us.
+
+### Conditional utilities by carpool status
+
+We use the same `avg_predictions()` centering approach as before, but now include `carpool` in the `by` argument so we get separate predictions for each group:
+
+```{r}
+#| label: utilities-by-carpool
+
+utilities_carpool <- attribute_lookup |>
+  mutate(
+    results = map(
+      attribute, \(att) {
+        avg_predictions(
+          model_carpool,
+          newdata = "balanced",
+          by = c(att, "carpool"),
+          type = "link"
+        ) |>
+          rename(level = all_of(att))
+      }
+    )
+  ) |>
+  unnest(results) |>
+  left_join(attribute_levels_lookup, by = join_by(attribute, attribute_nice, level)) |>
+  group_by(attribute, carpool) |>
+  mutate(
+    att_avg = mean(estimate),
+    estimate = estimate - att_avg,
+    conf.low = conf.low - att_avg,
+    conf.high = conf.high - att_avg
+  ) |>
+  select(-att_avg) |>
+  ungroup()
+
+utilities_carpool |>
+  select(attribute, level, carpool, estimate) |>
+  arrange(attribute, level)
+```
+
+```{r}
+#| label: fig-utilities-carpool
+
+utilities_carpool |>
+  mutate(carpool = if_else(carpool, "Carpooler", "Non-carpooler")) |>
+  ggplot(aes(
+    x = estimate,
+    y = fct_reorder(level_nice, estimate),
+    color = carpool
+  )) +
+  geom_pointrange(
+    aes(xmin = conf.low, xmax = conf.high),
+    position = position_dodge(width = 0.5)
+  ) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  facet_wrap(vars(attribute_nice), scales = "free_y", ncol = 2) +
+  scale_color_manual(values = clrs[c(1, 7)]) +
+  labs(
+    x = "Part-worth utility (zero-centered within attribute × group)",
+    y = NULL,
+    color = NULL
+  ) +
+  theme(legend.position = "bottom")
+```
+
+### Conditional WTP by carpool status
+
+For WTP, non-carpoolers use the same formula as before. For carpoolers, we have to add the interaction coefficients into both numerator and denominator:
+
+$$
+\text{WTP}_\text{carpooler} = -\frac{\beta_\text{feature} + \beta_\text{feature:carpool}}{\beta_\text{price} + \beta_\text{price:carpool}}
+$$
+
+{marginaleffects} handles this with backtick quoting for the interaction terms:
+
+```{r}
+#| label: wtp-by-carpool
+
+wtp_noncarpoolers <- hypotheses(
+  model_wtp_carpool,
+  hypothesis = c(
+    "7 seats vs. 6"       = "-seat7 / price_num = 0",
+    "8 seats vs. 6"       = "-seat8 / price_num = 0",
+    "3 ft cargo vs. 2 ft" = "-cargo3ft / price_num = 0",
+    "Hybrid vs. Gas"      = "-enghyb / price_num = 0",
+    "Electric vs. Gas"    = "-engelec / price_num = 0"
+  )
+) |>
+  as_tibble() |>
+  mutate(carpool = FALSE)
+
+wtp_carpoolers <- hypotheses(
+  model_wtp_carpool,
+  hypothesis = c(
+    "7 seats vs. 6"       = "-(seat7 + `seat7:carpoolTRUE`) / (price_num + `price_num:carpoolTRUE`) = 0",
+    "8 seats vs. 6"       = "-(seat8 + `seat8:carpoolTRUE`) / (price_num + `price_num:carpoolTRUE`) = 0",
+    "3 ft cargo vs. 2 ft" = "-(cargo3ft + `cargo3ft:carpoolTRUE`) / (price_num + `price_num:carpoolTRUE`) = 0",
+    "Hybrid vs. Gas"      = "-(enghyb + `enghyb:carpoolTRUE`) / (price_num + `price_num:carpoolTRUE`) = 0",
+    "Electric vs. Gas"    = "-(engelec + `engelec:carpoolTRUE`) / (price_num + `price_num:carpoolTRUE`) = 0"
+  )
+) |>
+  as_tibble() |>
+  mutate(carpool = TRUE)
+
+wtp_by_carpool <- bind_rows(wtp_noncarpoolers, wtp_carpoolers) |>
+  mutate(carpool = ifelse(carpool, "Carpooler", "Non-carpooler"))
+
+wtp_by_carpool |> select(hypothesis, carpool, estimate, conf.low, conf.high)
+```
+
+```{r}
+#| label: fig-wtp-carpool
+
+wtp_by_carpool |>
+  mutate(hypothesis = fct_reorder(hypothesis, estimate)) |>
+  mutate(across(c(estimate, conf.low, conf.high), \(x) x * 1000)) |> 
+  ggplot(aes(x = estimate, y = hypothesis, color = carpool)) +
+  geom_pointrange(
+    aes(xmin = conf.low, xmax = conf.high),
+    position = position_dodge(width = 0.5)
+  ) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_x_continuous(labels = label_dollar()) +
+  scale_color_manual(values = clrs[c(1, 7)]) +
+  labs(x = "WTP", y = NULL, color = NULL) +
+  theme(legend.position = "bottom")
+```
+
+### Conditional market simulation
+
+For market simulation we just add `carpool` to the newdata and calculate the same predicted market shares:
+
+```{r}
+#| label: market-sim-carpool
+
+simulate_shares_carpool <- function(carpool_val) {
+  predictions(
+    model_carpool,
+    newdata = market |> mutate(carpool = carpool_val),
+    type = "link"
+  ) |>
+    as_tibble() |>
+    select(product, utility = estimate) |>
+    mutate(
+      market_share = exp(utility) / sum(exp(utility)),
+      carpool = ifelse(carpool_val, "Carpooler", "Non-carpooler")
+    )
+}
+
+market_shares_carpool <- bind_rows(
+  simulate_shares_carpool(FALSE),
+  simulate_shares_carpool(TRUE)
+)
+
+market_shares_carpool
+```
+
 ## Reflection questions
 
 1. The part-worth utility model assumes that total product utility is just the *sum* of the individual part-worths: $U(\text{product}) = \beta_\text{engine} + \beta_\text{seating} + \beta_\text{cargo} + \beta_\text{price}$. When might this additive model give misleading results?
