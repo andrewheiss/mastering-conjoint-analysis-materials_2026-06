@@ -93,13 +93,13 @@ server <- function(input, output, session) {
     
     # Apply filters
     if (input$species != "All") {
-      data <- data[data$species == input$species, ]
+      data <- subset(data, species == input$species)
     }
     if (input$island != "All") {
-      data <- data[data$island == input$island, ]
+      data <- subset(data, island == input$island)
     }
     if (input$sex != "All") {
-      data <- data[data$sex == input$sex, ]
+      data <- subset(data, sex == input$sex)
     }
     
     data
