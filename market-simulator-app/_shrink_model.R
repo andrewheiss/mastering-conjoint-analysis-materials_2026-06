@@ -2,7 +2,7 @@ library(mclogit)
 
 # Save the model in the original .qmd file and put it some place where this can load it
 # model_wtp_carpool <- mclogit(
-#   choice | choice_id ~ (seat + cargo + eng + price) * carpool,
+#   choice | choice_id ~ (seat + cargo + eng + price_num) * carpool,
 #   data = minivans
 # )
 model <- readRDS("model_wtp_carpool.rds")
